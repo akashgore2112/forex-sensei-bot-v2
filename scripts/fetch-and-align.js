@@ -6,7 +6,8 @@ import { alignSeries } from '../src/data/aligner.js';
 import { requireEnv } from '../src/utils/env.js';
 import { rsi, atr, adx, ema } from '../src/indicators/ta.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const __dirname = path.dirname(fileURLToPath(import.meta.url)); // <= is line se pehle ek blank line ho
+
 
 function saveJSON(p, obj) {
   fs.mkdirSync(path.dirname(p), { recursive: true });
