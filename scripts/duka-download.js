@@ -1,11 +1,10 @@
 #!/usr/bin/env node
 /**
- * Dukascopy minute downloader (robust CLI multi-strategy).
- * Tries multiple flag styles to survive version differences.
+ * Dukascopy minute downloader (ultra-robust CLI multi-variant).
+ * Tries many flag styles across dukascopy-node builds.
  * Env: DUKA_SYMBOL, DUKA_START, DUKA_END, DUKA_CONCURRENCY
- * Output: data/raw/duka/<SYMBOL>/<YYYY-MM>/*.csv
+ * Out: data/raw/duka/<SYMBOL>/<YYYY-MM>/*.csv
  */
-
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import fs from "node:fs";
@@ -37,7 +36,9 @@ function fmtDate(d) {
   const day = String(d.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
-
+function fmtDateTime(d) {
+  return `${fmtDate(d)} 00:00:00`;
+}
 function* monthChunks(start, end) {
   const first = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
   const lastM = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), 1));
@@ -55,26 +56,45 @@ function* monthChunks(start, end) {
 }
 
 async function runNpx(args) {
-  // always latest to avoid old cached versions; --yes to skip prompts
+  // --yes: non-interactive; @latest to avoid cached old binaries
   const full = ["--yes", "dukascopy-node@latest", ...args];
-  return await pexec("npx", full, { maxBuffer: 1024 * 1024 * 50 });
+  return await pexec("npx", full, { maxBuffer: 1024 * 1024 * 100 });
 }
 
-async function tryAllVariants({ instr, from, to, outDir }) {
-  const F = fmtDate;
-  const variants = [
-    // 1) long flags with equals
-    ["--instrument="+instr, "--timeframe=m1", "--from="+F(from), "--to="+F(to), "--format=csv", "--path="+outDir],
-    // 2) long flags with space
-    ["--instrument", instr, "--timeframe", "m1", "--from", F(from), "--to", F(to), "--format", "csv", "--path", outDir],
-    // 3) short flags with equals + uppercase timeframe
-    ["-i="+instr, "-timeframe=M1", "-from="+F(from), "-to="+F(to), "-format=csv", "-path="+outDir],
-    // 4) short flags with space
-    ["-i", instr, "-timeframe", "M1", "-from", F(from), "-to", F(to), "-format", "csv", "-path", outDir],
-  ];
+function variants({ instr, from, to, outDir }) {
+  const F = fmtDate(from), T = fmtDate(to);
+  const Fts = fmtDateTime(from), Tts = fmtDateTime(to);
+  return [
+    // ---- long flags, equals, date only
+    ["--instrument="+instr, "--timeframe=m1", "--from="+F, "--to="+T, "--format=csv", "--path="+outDir],
+    // long flags, space, date only
+    ["--instrument", instr, "--timeframe", "m1", "--from", F, "--to", T, "--format", "csv", "--path", outDir],
+    // long flags, equals, date-time
+    ["--instrument="+instr, "--timeframe=m1", "--from="+Fts, "--to="+Tts, "--format=csv", "--path="+outDir],
+    // long flags, space, date-time
+    ["--instrument", instr, "--timeframe", "m1", "--from", Fts, "--to", Tts, "--format", "csv", "--path", outDir],
 
+    // ---- date-from / date-to naming
+    ["--instrument", instr, "--timeframe", "m1", "--date-from", F, "--date-to", T, "--format", "csv", "--path", outDir],
+    ["--instrument", instr, "--timeframe", "m1", "--date-from", Fts, "--date-to", Tts, "--format", "csv", "--path", outDir],
+
+    // ---- short flags + uppercase timeframe
+    ["-i", instr, "-timeframe", "M1", "-from", F, "-to", T, "-format", "csv", "-path", outDir],
+    ["-i="+instr, "-timeframe=M1", "-from="+F, "-to="+T, "-format=csv", "-path="+outDir],
+
+    // ---- some builds use --output instead of --path
+    ["--instrument", instr, "--timeframe", "m1", "--from", F, "--to", T, "--format", "csv", "--output", outDir],
+    ["-i", instr, "-timeframe", "M1", "-from", F, "-to", T, "-format", "csv", "--output", outDir],
+
+    // ---- older variants expect hyphen-less flags (rare)
+    ["instrument", instr, "timeframe", "m1", "from", F, "to", T, "format", "csv", "path", outDir],
+    ["instrument", instr, "timeframe", "M1", "date-from", F, "date-to", T, "format", "csv", "output", outDir],
+  ];
+}
+
+async function tryAllVariants(opts) {
   let lastErr;
-  for (const args of variants) {
+  for (const args of variants(opts)) {
     try {
       const { stdout, stderr } = await runNpx(args);
       if (stdout?.trim()) console.log(stdout.trim());
@@ -82,10 +102,10 @@ async function tryAllVariants({ instr, from, to, outDir }) {
       return;
     } catch (e) {
       lastErr = e;
-      // keep trying next variant
+      // continue
     }
   }
-  throw lastErr || new Error("dukascopy-node CLI failed");
+  throw lastErr || new Error("dukascopy-node CLI failed (all variants)");
 }
 
 async function runQueue(items, worker, concurrency) {
@@ -96,9 +116,7 @@ async function runQueue(items, worker, concurrency) {
       while (running < concurrency && idx < q.length) {
         const i = idx++;
         running++;
-        worker(q[i], i).then(() => {
-          running--; done++; pump();
-        }).catch(reject);
+        worker(q[i], i).then(() => { running--; done++; pump(); }).catch(reject);
       }
       if (running === 0 && idx >= q.length) resolve(done);
     };
@@ -112,7 +130,6 @@ async function downloadMonth(chunk) {
   const outDir = path.join(OUT_ROOT, label);
   fs.mkdirSync(outDir, { recursive: true });
   console.log(`▶ downloading ${SYMBOL} ${label} ${fmtDate(from)} → ${fmtDate(to)}`);
-
   await tryAllVariants({ instr: SYMBOL, from, to, outDir });
 }
 
@@ -124,7 +141,6 @@ async function main() {
   const secs = Math.round((Date.now() - t0) / 1000);
   console.log(`✅ Done downloading minute data (${months.length} months) in ${secs}s`);
 }
-
 main().catch((e) => {
   console.error("ERROR:", e?.message || e);
   process.exit(1);
