@@ -7,17 +7,14 @@ import readline from "node:readline";
 const ensureDir = async (p) => fsp.mkdir(p, { recursive: true });
 
 const parseCsvLine = (line, idxMap) => {
-  // quick CSV split (csv is simple, no quotes by dukascopy-node)
   const parts = line.split(",");
-  const tRaw = parts[idxMap.time].trim();
+  const tRaw = parts[idxMap.time]?.trim();
   const o = Number(parts[idxMap.open]);
   const h = Number(parts[idxMap.high]);
   const l = Number(parts[idxMap.low]);
   const c = Number(parts[idxMap.close]);
   if (!tRaw || Number.isNaN(o) || Number.isNaN(h) || Number.isNaN(l) || Number.isNaN(c)) return null;
 
-  // dukascopy-node usually emits ISO-ish or epoch ms? We standardize:
-  // Try Number first (epoch ms), else Date.parse
   let ts;
   if (/^\d+$/.test(tRaw)) ts = new Date(Number(tRaw));
   else ts = new Date(tRaw);
@@ -61,12 +58,10 @@ const upsertBar = (map, key, px) => {
   }
   if (px.h > bar.high) bar.high = px.h;
   if (px.l < bar.low) bar.low = px.l;
-  // close always last seen price in bucket
   bar.close = px.c;
 };
 
 const readAllCsv = async (rootDir) => {
-  // iterate YYYY-MM folders
   const months = (await fsp.readdir(rootDir, { withFileTypes: true }))
     .filter((d) => d.isDirectory() && /^\d{4}-\d{2}$/.test(d.name))
     .map((d) => d.name)
@@ -75,9 +70,7 @@ const readAllCsv = async (rootDir) => {
   for (const m of months) {
     const monthDir = path.join(rootDir, m);
     const fList = await fsp.readdir(monthDir);
-    for (const f of fList) {
-      if (f.endsWith(".csv")) files.push(path.join(monthDir, f));
-    }
+    for (const f of fList) if (f.endsWith(".csv")) files.push(path.join(monthDir, f));
   }
   files.sort();
   return files;
@@ -100,13 +93,8 @@ export async function aggregateDukascopy({
   const h4 = new Map();
   const d1 = new Map();
 
-  // stream parse files
   for (const file of allCsv) {
-    const rl = readline.createInterface({
-      input: fs.createReadStream(file, { encoding: "utf8" }),
-      crlfDelay: Infinity,
-    });
-
+    const rl = readline.createInterface({ input: fs.createReadStream(file, { encoding: "utf8" }), crlfDelay: Infinity });
     let headerParsed = false;
     let idxMap = null;
 
@@ -115,10 +103,7 @@ export async function aggregateDukascopy({
       if (!headerParsed) {
         idxMap = detectHeaderIndexes(line);
         if (Object.values(idxMap).some((i) => i === -1)) {
-          // header line not actual header, maybe first row is data; try fallback mapping (dukascopy-node default)
-          // Format: time, open, high, low, close
           idxMap = { time: 0, open: 1, high: 2, low: 3, close: 4 };
-          // but also parse current line as data
           const px = parseCsvLine(line, idxMap);
           if (px) {
             upsertBar(h1, floorToHourUTC(px.ts), px);
@@ -129,10 +114,8 @@ export async function aggregateDukascopy({
         headerParsed = true;
         continue;
       }
-
       const px = parseCsvLine(line, idxMap);
       if (!px) continue;
-
       upsertBar(h1, floorToHourUTC(px.ts), px);
       upsertBar(h4, floorTo4HUTC(px.ts), px);
       upsertBar(d1, floorToDayUTC(px.ts), px);
@@ -144,23 +127,20 @@ export async function aggregateDukascopy({
       .sort((a, b) => a - b)
       .map((t) => ({ time: new Date(t).toISOString(), open: m.get(t).open, high: m.get(t).high, low: m.get(t).low, close: m.get(t).close, volume: null }));
 
-  const symOut = "EUR-USD"; // downstream compatibility (dash naming)
+  const symOut = "EUR-USD";
   const out = {
     "1H": { symbol: symOut, timeframe: "1H", candles: toCandles(h1), meta: { gaps: 0 } },
     "4H": { symbol: symOut, timeframe: "4H", candles: toCandles(h4), meta: { gaps: 0 } },
     "1D": { symbol: symOut, timeframe: "1D", candles: toCandles(d1), meta: { gaps: 0 } },
   };
 
-  // ensure dirs
   await ensureDir(outRoot);
   await ensureDir(cacheRoot);
 
-  // write vendor candles
   await fsp.writeFile(path.join(outRoot, `EUR-USD_1H.json`), JSON.stringify(out["1H"]));
   await fsp.writeFile(path.join(outRoot, `EUR-USD_4H.json`), JSON.stringify(out["4H"]));
   await fsp.writeFile(path.join(outRoot, `EUR-USD_1D.json`), JSON.stringify(out["1D"]));
 
-  // mirror to cache/json for the existing pipeline
   await fsp.writeFile(path.join(cacheRoot, `EUR-USD_1H.json`), JSON.stringify(out["1H"]));
   await fsp.writeFile(path.join(cacheRoot, `EUR-USD_4H.json`), JSON.stringify(out["4H"]));
   await fsp.writeFile(path.join(cacheRoot, `EUR-USD_1D.json`), JSON.stringify(out["1D"]));
