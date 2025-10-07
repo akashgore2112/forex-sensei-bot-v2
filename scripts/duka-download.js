@@ -65,30 +65,16 @@ function variants({ instr, from, to, outDir }) {
   const F = fmtDate(from), T = fmtDate(to);
   const Fts = fmtDateTime(from), Tts = fmtDateTime(to);
   return [
-    // ---- long flags, equals, date only
-    ["--instrument="+instr, "--timeframe=m1", "--from="+F, "--to="+T, "--format=csv", "--path="+outDir],
-    // long flags, space, date only
-    ["--instrument", instr, "--timeframe", "m1", "--from", F, "--to", T, "--format", "csv", "--path", outDir],
-    // long flags, equals, date-time
-    ["--instrument="+instr, "--timeframe=m1", "--from="+Fts, "--to="+Tts, "--format=csv", "--path="+outDir],
-    // long flags, space, date-time
-    ["--instrument", instr, "--timeframe", "m1", "--from", Fts, "--to", Tts, "--format", "csv", "--path", outDir],
+    // ✅ This build’s canonical form (help output ke mutabik)
+    ["--instrument", instr, "--timeframe", "m1", "--from-date", F,   "--to-date", T,   "--format", "csv", "--output", outDir],
+    ["--instrument", instr, "--timeframe", "m1", "--from-date", Fts, "--to-date", Tts, "--format", "csv", "--output", outDir],
 
-    // ---- date-from / date-to naming
-    ["--instrument", instr, "--timeframe", "m1", "--date-from", F, "--date-to", T, "--format", "csv", "--path", outDir],
-    ["--instrument", instr, "--timeframe", "m1", "--date-from", Fts, "--date-to", Tts, "--format", "csv", "--path", outDir],
+    // Alternates (compat for other releases)
+    ["--instrument="+instr, "--timeframe=m1", "--from-date="+F,   "--to-date="+T,   "--format=csv", "--output="+outDir],
+    ["--instrument="+instr, "--timeframe=m1", "--from-date="+Fts, "--to-date="+Tts, "--format=csv", "--output="+outDir],
 
-    // ---- short flags + uppercase timeframe
-    ["-i", instr, "-timeframe", "M1", "-from", F, "-to", T, "-format", "csv", "-path", outDir],
-    ["-i="+instr, "-timeframe=M1", "-from="+F, "-to="+T, "-format=csv", "-path="+outDir],
-
-    // ---- some builds use --output instead of --path
     ["--instrument", instr, "--timeframe", "m1", "--from", F, "--to", T, "--format", "csv", "--output", outDir],
-    ["-i", instr, "-timeframe", "M1", "-from", F, "-to", T, "-format", "csv", "--output", outDir],
-
-    // ---- older variants expect hyphen-less flags (rare)
-    ["instrument", instr, "timeframe", "m1", "from", F, "to", T, "format", "csv", "path", outDir],
-    ["instrument", instr, "timeframe", "M1", "date-from", F, "date-to", T, "format", "csv", "output", outDir],
+    ["-i", instr, "-timeframe", "M1", "-from", F, "-to", T, "-format", "csv", "--output", outDir]
   ];
 }
 
