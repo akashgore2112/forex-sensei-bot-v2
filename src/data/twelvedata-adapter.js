@@ -49,11 +49,11 @@ export async function fetchCandles({
   const interval = TF_MAP[timeframe];
   if (!interval) throw new Error(`Unsupported timeframe: ${timeframe}`);
 
-  // TwelveData supports paging via "page" param; we loop until finished.
   let page = 1;
   const all = [];
+  let hasMore = true; // ESLint-safe loop condition
 
-  while (true) {
+  while (hasMore) {
     const url = new URL(BASE);
     url.searchParams.set('symbol', symbol);
     url.searchParams.set('interval', interval);
@@ -65,7 +65,6 @@ export async function fetchCandles({
     url.searchParams.set('apikey', apikey);
     url.searchParams.set('page', String(page));
 
-    // console.log('[GET]', url.toString());
     const res = await withRetry(async () => {
       const r = await fetch(url, { headers: { accept: 'application/json' } });
       if (!r.ok) {
@@ -75,12 +74,14 @@ export async function fetchCandles({
       return r.json();
     });
 
-    if (res?.status === 'error') {
-      throw new Error(`TwelveData error: ${res.message || 'unknown'}`);
-    }
+    if (res?.status === 'error') throw new Error(`TwelveData error: ${res.message || 'unknown'}`);
 
     const data = res?.values || res?.data || res?.candles || res?.value || [];
-    if (!Array.isArray(data)) break;
+    if (!Array.isArray(data) || data.length === 0) {
+      // no data on this page => stop
+      hasMore = false;
+      break;
+    }
 
     // normalize fields
     for (const d of data) {
@@ -94,15 +95,24 @@ export async function fetchCandles({
       });
     }
 
-    // paging
-    const totalPages =
-      Number(res?.total_pages) ||
-      Number(res?.pages) ||
-      (data.length < outputsize ? page : null);
+    // Determine if more pages exist
+    const totalPages = Number(res?.total_pages) || Number(res?.pages) || null;
+    const nextToken = res?.next_page || res?.next_page_token || null;
 
-    if (!totalPages || page >= totalPages) break;
-    page += 1;
-    await sleep(150); // polite
+    if (totalPages != null) {
+      hasMore = page < totalPages;
+      page += 1;
+    } else if (nextToken) {
+      // some APIs return next page number or token
+      page = Number(nextToken) || page + 1;
+      hasMore = true;
+    } else {
+      // fallback: if we got a 'full' page, try next; otherwise stop
+      hasMore = data.length >= outputsize;
+      if (hasMore) page += 1;
+    }
+
+    await sleep(120); // polite delay
   }
 
   // de-dup & sort just in case
