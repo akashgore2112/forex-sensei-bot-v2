@@ -1,49 +1,64 @@
 #!/usr/bin/env node
 /**
- * Dukascopy minute downloader (per-month chunks, robust flags).
- * - Uses: `npx --yes dukascopy-node@latest` CLI (no interactive prompts)
+ * Dukascopy minute downloader (programmatic API via dukascopy-node)
+ * - No CLI flags. Direct JS API => fewer breaking changes.
  * - Env: DUKA_SYMBOL, DUKA_START, DUKA_END, DUKA_CONCURRENCY
- * - Output: data/raw/duka/<SYMBOL>/<YYYY-MM>/*.csv
+ * - Output (per month): data/raw/duka/<SYMBOL>/<YYYY-MM>/*.csv
  *
  * Run: npm run data:duka:download
  */
 
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 
-const pexec = promisify(execFile);
+// ---- safe dynamic import (handles CJS/ESM shapes) ----
+async function loadDuka() {
+  // eslint-disable-next-line import/no-dynamic-require, global-require
+  const mod = await import("dukascopy-node");
+  // library exports vary by version; normalize
+  const api =
+    mod.download ||
+    mod.default?.download ||
+    mod.default ||
+    mod; // some builds export the function itself
+  const Timeframe =
+    mod.Timeframe || mod.default?.Timeframe || { m1: "m1" };
+  if (typeof api !== "function") {
+    throw new Error("dukascopy-node: download() API not found");
+  }
+  return { download: api, Timeframe };
+}
 
-// ---------- env helpers ----------
 function env(name, fallback) {
   const v = process.env[name] ?? fallback;
   if (v == null) throw new Error(`Missing env ${name}`);
   return String(v);
 }
 
-const SYMBOL = env("DUKA_SYMBOL", "EURUSD").toUpperCase(); // no slash
-const START = new Date(env("DUKA_START", "2023-10-06"));   // inclusive
-const END   = new Date(env("DUKA_END", "2025-10-06"));     // inclusive
-const CONC  = Number(env("DUKA_CONCURRENCY", "4"));
-const OUT_ROOT = path.resolve("data/raw/duka", SYMBOL);
+// ---- env & paths ----
+const SYMBOL = env("DUKA_SYMBOL", "EURUSD").toUpperCase(); // e.g. EURUSD
+const START = new Date(env("DUKA_START", "2023-10-06"));   // inclusive UTC
+const END   = new Date(env("DUKA_END", "2025-10-06"));     // inclusive UTC
+const CONC  = Math.max(1, Number(env("DUKA_CONCURRENCY", String(Math.min(4, os.cpus().length || 2)))));
 
 if (Number.isNaN(START.getTime()) || Number.isNaN(END.getTime())) {
   throw new Error("DUKA_START/DUKA_END invalid date (YYYY-MM-DD expected)");
 }
 if (END < START) throw new Error("DUKA_END must be >= DUKA_START");
 
+const OUT_ROOT = path.resolve("data/raw/duka", SYMBOL);
 fs.mkdirSync(OUT_ROOT, { recursive: true });
 
-// ---------- date utils ----------
 function fmtDate(d) {
   const y = d.getUTCFullYear();
   const m = String(d.getUTCMonth() + 1).padStart(2, "0");
   const day = String(d.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
+
+// calendar-month chunks covering [START, END]
 function* monthChunks(start, end) {
-  // iterate calendar months covering [start, end]
   const first = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
   const lastM = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), 1));
   for (
@@ -59,94 +74,87 @@ function* monthChunks(start, end) {
   }
 }
 
-// ---------- concurrency queue ----------
 async function runQueue(items, worker, concurrency) {
-  const tasks = [...items];
+  const q = [...items];
   const results = [];
-  let running = 0, i = 0;
-
+  let active = 0, idx = 0;
   return await new Promise((resolve, reject) => {
     const pump = () => {
-      while (running < concurrency && i < tasks.length) {
-        const idx = i++, item = tasks[idx];
-        running++;
-        worker(item, idx).then(r => results[idx] = r)
+      while (active < concurrency && idx < q.length) {
+        const i = idx++, item = q[i];
+        active++;
+        worker(item, i)
+          .then((r) => results[i] = r)
           .catch(reject)
-          .finally(() => { running--; pump(); });
+          .finally(() => { active--; pump(); });
       }
-      if (running === 0 && i >= tasks.length) resolve(results);
+      if (active === 0 && idx >= q.length) resolve(results);
     };
     pump();
   });
 }
 
-// ---------- main worker (with robust CLI flags) ----------
-async function downloadMonth(chunk) {
+async function downloadMonth(download, Timeframe, chunk) {
   const { y, m, from, to } = chunk;
   const label = `${y}-${String(m).padStart(2, "0")}`;
   const outDir = path.join(OUT_ROOT, label);
   fs.mkdirSync(outDir, { recursive: true });
 
-  console.log("▶ downloading", SYMBOL, label, fmtDate(from), "→", fmtDate(to));
+  console.log(`▶ ${SYMBOL} ${label} ${fmtDate(from)} → ${fmtDate(to)} (m1)`);
 
-  // helper to run npx with given args; --yes avoids prompts
-  async function runNpx(args) {
-    const full = ["--yes", "dukascopy-node@latest", ...args];
-    return await pexec("npx", full, { maxBuffer: 1024 * 1024 * 50 });
-  }
+  // Many versions accept this shape:
+  // download({ instrument, dates: { from, to }, timeframe, format, folder })
+  // Some expect `dateFrom/dateTo` or `fromDate/toDate` — provide all aliases.
+  const opts = {
+    instrument: SYMBOL,
+    dates: { from, to },
+    dateFrom: from,  // aliases for older versions
+    dateTo: to,
+    fromDate: from,
+    toDate: to,
+    timeframe: Timeframe.m1 || "m1",
+    format: "csv",
+    folder: outDir,
+    // priceType may be required on some builds; default to BID
+    priceType: "bid"
+  };
 
-  // Try 1: long flags (common on latest)
-  const args1 = [
-    "--instrument", SYMBOL,
-    "--timeframe", "m1",
-    "--from", fmtDate(from),
-    "--to", fmtDate(to),
-    "--format", "csv",
-    "--path", outDir
-  ];
-
+  // Try normal call
   try {
-    const { stdout, stderr } = await runNpx(args1);
-    if (stdout?.trim()) console.log(stdout.trim());
-    if (stderr?.trim()) console.error(stderr.trim());
+    await download(opts);
     return { label, outDir };
   } catch (e1) {
-    console.warn("long-flag attempt failed, retrying with short flags/uppercase…");
-
-    // Try 2: short flags + uppercase timeframe (compat on some builds)
-    const args2 = [
-      "-i", SYMBOL,
-      "-timeframe", "M1",
-      "-from", fmtDate(from),
-      "-to", fmtDate(to),
-      "-format", "csv",
-      "-path", outDir
-    ];
+    // Fallback: some builds expect `format: 'csv'` under `file` or `options`
     try {
-      const { stdout, stderr } = await runNpx(args2);
-      if (stdout?.trim()) console.log(stdout.trim());
-      if (stderr?.trim()) console.error(stderr.trim());
+      await download({
+        instrument: SYMBOL,
+        from, to,
+        timeframe: Timeframe.m1 || "m1",
+        format: "csv",
+        folder: outDir,
+        priceType: "bid"
+      });
       return { label, outDir };
     } catch (e2) {
       throw new Error(
-        `dukascopy-node failed for ${label}\nFirst: ${e1.message}\nSecond: ${e2.message}`
+        `dukascopy-node download failed for ${label}\n1) ${e1?.message}\n2) ${e2?.message}`
       );
     }
   }
 }
 
-// ---------- entry ----------
 async function main() {
-  const months = [...monthChunks(START, END)];
-  console.log(`Symbol: ${SYMBOL}, months: ${months.length}, out: ${OUT_ROOT}, conc: ${Math.max(1, CONC)}`);
+  const { download, Timeframe } = await loadDuka();
+  const chunks = [...monthChunks(START, END)];
+  console.log(`Symbol: ${SYMBOL}, months: ${chunks.length}, out: ${OUT_ROOT}, conc: ${CONC}`);
 
   const t0 = Date.now();
-  await runQueue(months, downloadMonth, Math.max(1, CONC));
+  await runQueue(chunks, (c) => downloadMonth(download, Timeframe, c), CONC);
   const secs = Math.round((Date.now() - t0) / 1000);
-  console.log(`✅ Done downloading minute data (${months.length} months) in ${secs}s`);
+  console.log(`✅ Done downloading minute data (${chunks.length} months) in ${secs}s`);
 }
 
-main().catch(e => {
+main().catch((e) => {
   console.error("ERROR:", e?.message || e);
   process.exit(1);
 });
