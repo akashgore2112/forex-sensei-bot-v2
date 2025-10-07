@@ -1,34 +1,18 @@
 #!/usr/bin/env node
 /**
- * Dukascopy minute downloader (programmatic API via dukascopy-node)
- * - No CLI flags. Direct JS API => fewer breaking changes.
- * - Env: DUKA_SYMBOL, DUKA_START, DUKA_END, DUKA_CONCURRENCY
- * - Output (per month): data/raw/duka/<SYMBOL>/<YYYY-MM>/*.csv
- *
- * Run: npm run data:duka:download
+ * Dukascopy minute downloader (robust CLI multi-strategy).
+ * Tries multiple flag styles to survive version differences.
+ * Env: DUKA_SYMBOL, DUKA_START, DUKA_END, DUKA_CONCURRENCY
+ * Output: data/raw/duka/<SYMBOL>/<YYYY-MM>/*.csv
  */
 
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 
-// ---- safe dynamic import (handles CJS/ESM shapes) ----
-async function loadDuka() {
-  // eslint-disable-next-line import/no-dynamic-require, global-require
-  const mod = await import("dukascopy-node");
-  // library exports vary by version; normalize
-  const api =
-    mod.download ||
-    mod.default?.download ||
-    mod.default ||
-    mod; // some builds export the function itself
-  const Timeframe =
-    mod.Timeframe || mod.default?.Timeframe || { m1: "m1" };
-  if (typeof api !== "function") {
-    throw new Error("dukascopy-node: download() API not found");
-  }
-  return { download: api, Timeframe };
-}
+const pexec = promisify(execFile);
 
 function env(name, fallback) {
   const v = process.env[name] ?? fallback;
@@ -36,15 +20,12 @@ function env(name, fallback) {
   return String(v);
 }
 
-// ---- env & paths ----
-const SYMBOL = env("DUKA_SYMBOL", "EURUSD").toUpperCase(); // e.g. EURUSD
-const START = new Date(env("DUKA_START", "2023-10-06"));   // inclusive UTC
-const END   = new Date(env("DUKA_END", "2025-10-06"));     // inclusive UTC
+const SYMBOL = env("DUKA_SYMBOL", "EURUSD").toUpperCase();
+const START = new Date(env("DUKA_START", "2023-10-06"));
+const END   = new Date(env("DUKA_END", "2025-10-06"));
 const CONC  = Math.max(1, Number(env("DUKA_CONCURRENCY", String(Math.min(4, os.cpus().length || 2)))));
 
-if (Number.isNaN(START.getTime()) || Number.isNaN(END.getTime())) {
-  throw new Error("DUKA_START/DUKA_END invalid date (YYYY-MM-DD expected)");
-}
+if (Number.isNaN(START.getTime()) || Number.isNaN(END.getTime())) throw new Error("DUKA_START/DUKA_END invalid date");
 if (END < START) throw new Error("DUKA_END must be >= DUKA_START");
 
 const OUT_ROOT = path.resolve("data/raw/duka", SYMBOL);
@@ -57,7 +38,6 @@ function fmtDate(d) {
   return `${y}-${m}-${day}`;
 }
 
-// calendar-month chunks covering [START, END]
 function* monthChunks(start, end) {
   const first = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
   const lastM = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), 1));
@@ -74,84 +54,75 @@ function* monthChunks(start, end) {
   }
 }
 
+async function runNpx(args) {
+  // always latest to avoid old cached versions; --yes to skip prompts
+  const full = ["--yes", "dukascopy-node@latest", ...args];
+  return await pexec("npx", full, { maxBuffer: 1024 * 1024 * 50 });
+}
+
+async function tryAllVariants({ instr, from, to, outDir }) {
+  const F = fmtDate;
+  const variants = [
+    // 1) long flags with equals
+    ["--instrument="+instr, "--timeframe=m1", "--from="+F(from), "--to="+F(to), "--format=csv", "--path="+outDir],
+    // 2) long flags with space
+    ["--instrument", instr, "--timeframe", "m1", "--from", F(from), "--to", F(to), "--format", "csv", "--path", outDir],
+    // 3) short flags with equals + uppercase timeframe
+    ["-i="+instr, "-timeframe=M1", "-from="+F(from), "-to="+F(to), "-format=csv", "-path="+outDir],
+    // 4) short flags with space
+    ["-i", instr, "-timeframe", "M1", "-from", F(from), "-to", F(to), "-format", "csv", "-path", outDir],
+  ];
+
+  let lastErr;
+  for (const args of variants) {
+    try {
+      const { stdout, stderr } = await runNpx(args);
+      if (stdout?.trim()) console.log(stdout.trim());
+      if (stderr?.trim()) console.error(stderr.trim());
+      return;
+    } catch (e) {
+      lastErr = e;
+      // keep trying next variant
+    }
+  }
+  throw lastErr || new Error("dukascopy-node CLI failed");
+}
+
 async function runQueue(items, worker, concurrency) {
   const q = [...items];
-  const results = [];
-  let active = 0, idx = 0;
+  let idx = 0, running = 0, done = 0;
   return await new Promise((resolve, reject) => {
     const pump = () => {
-      while (active < concurrency && idx < q.length) {
-        const i = idx++, item = q[i];
-        active++;
-        worker(item, i)
-          .then((r) => results[i] = r)
-          .catch(reject)
-          .finally(() => { active--; pump(); });
+      while (running < concurrency && idx < q.length) {
+        const i = idx++;
+        running++;
+        worker(q[i], i).then(() => {
+          running--; done++; pump();
+        }).catch(reject);
       }
-      if (active === 0 && idx >= q.length) resolve(results);
+      if (running === 0 && idx >= q.length) resolve(done);
     };
     pump();
   });
 }
 
-async function downloadMonth(download, Timeframe, chunk) {
+async function downloadMonth(chunk) {
   const { y, m, from, to } = chunk;
   const label = `${y}-${String(m).padStart(2, "0")}`;
   const outDir = path.join(OUT_ROOT, label);
   fs.mkdirSync(outDir, { recursive: true });
+  console.log(`▶ downloading ${SYMBOL} ${label} ${fmtDate(from)} → ${fmtDate(to)}`);
 
-  console.log(`▶ ${SYMBOL} ${label} ${fmtDate(from)} → ${fmtDate(to)} (m1)`);
-
-  // Many versions accept this shape:
-  // download({ instrument, dates: { from, to }, timeframe, format, folder })
-  // Some expect `dateFrom/dateTo` or `fromDate/toDate` — provide all aliases.
-  const opts = {
-    instrument: SYMBOL,
-    dates: { from, to },
-    dateFrom: from,  // aliases for older versions
-    dateTo: to,
-    fromDate: from,
-    toDate: to,
-    timeframe: Timeframe.m1 || "m1",
-    format: "csv",
-    folder: outDir,
-    // priceType may be required on some builds; default to BID
-    priceType: "bid"
-  };
-
-  // Try normal call
-  try {
-    await download(opts);
-    return { label, outDir };
-  } catch (e1) {
-    // Fallback: some builds expect `format: 'csv'` under `file` or `options`
-    try {
-      await download({
-        instrument: SYMBOL,
-        from, to,
-        timeframe: Timeframe.m1 || "m1",
-        format: "csv",
-        folder: outDir,
-        priceType: "bid"
-      });
-      return { label, outDir };
-    } catch (e2) {
-      throw new Error(
-        `dukascopy-node download failed for ${label}\n1) ${e1?.message}\n2) ${e2?.message}`
-      );
-    }
-  }
+  await tryAllVariants({ instr: SYMBOL, from, to, outDir });
 }
 
 async function main() {
-  const { download, Timeframe } = await loadDuka();
-  const chunks = [...monthChunks(START, END)];
-  console.log(`Symbol: ${SYMBOL}, months: ${chunks.length}, out: ${OUT_ROOT}, conc: ${CONC}`);
-
+  const months = [...monthChunks(START, END)];
+  console.log(`Symbol: ${SYMBOL}, months: ${months.length}, out: ${OUT_ROOT}, conc: ${CONC}`);
   const t0 = Date.now();
-  await runQueue(chunks, (c) => downloadMonth(download, Timeframe, c), CONC);
+  await runQueue(months, downloadMonth, CONC);
   const secs = Math.round((Date.now() - t0) / 1000);
-  console.log(`✅ Done downloading minute data (${chunks.length} months) in ${secs}s`);
+  console.log(`✅ Done downloading minute data (${months.length} months) in ${secs}s`);
 }
 
 main().catch((e) => {
