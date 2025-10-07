@@ -13,6 +13,7 @@
     "dev:fmt": "prettier .",
     "dev:test": "node -e \"console.log('no tests yet')\"",
     "prepare": "husky",
+
     "data:duka:test-oct23": "INSTRUMENT=EURUSD DUKA_FROM_MONTH=2023-10 DUKA_TO_MONTH=2023-10 node scripts/duka-download.js",
     "data:duka:download": "node scripts/duka-download.js",
     "data:duka:build": "node scripts/build-candles.js"
@@ -27,7 +28,8 @@
     ]
   },
   "dependencies": {
-    "dukascopy-node": "^1.43.0"
+    "dukascopy-node": "^1.43.0",
+    "dotenv": "^16.4.5"
   },
   "devDependencies": {
     "eslint": "8.57.0",
