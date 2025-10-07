@@ -6,7 +6,7 @@ const SYMBOL = (process.env.DUKA_SYMBOL || "EURUSD").toUpperCase();
 
 (async () => {
   if (VENDOR !== "DUKA") {
-    console.log(`[build] DATA_VENDOR=${VENDOR} (non-DUKA) — current flow not implemented in this step.`);
+    console.log(`[build] DATA_VENDOR=${VENDOR} (non-DUKA) — not handled in this step.`);
     process.exit(0);
   }
   console.log(`[build] vendor=DUKA symbol=${SYMBOL} → aggregate to 1H/4H/1D JSON...`);
