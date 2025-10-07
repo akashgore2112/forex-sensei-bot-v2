@@ -1,0 +1,42 @@
+{
+  "name": "forex-sensei-bot-v2",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "dev:lint": "eslint .",
+    "dev:fmt": "prettier -w .",
+    "dev:test": "echo \"(tests pending in Phase 1)\" && exit 0",
+    "dev:run": "node scripts/hello.js",
+    "bt:mr": "node scripts/bt-mean-reversion.js || true",
+    "bt:all": "node scripts/bt-all.js || true",
+    "prepare": "husky"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "@commitlint/cli": "^20.1.0",
+    "@commitlint/config-conventional": "^20.0.0",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-import": "^2.29.1",
+    "husky": "^9.1.7",
+    "json": "^11.0.0",
+    "lint-staged": "^16.2.3",
+    "prettier": "^3.6.2"
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx}": [
+      "eslint --fix --max-warnings=0",
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ]
+  },
+  "type": "module",
+  "dependencies": {
+    "dotenv": "^17.2.3"
+  }
+}
