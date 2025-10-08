@@ -1,5 +1,10 @@
 // scripts/build-candles.js
-import { aggregateDukascopy } from "../src/data/vendors/dukascopy-aggregate.js";
+// OLD
+// import { aggregateDukascopy } from '../src/data/vendors/dukascopy-aggregate.js';
+
+// NEW (resilient to default OR named)
+import * as agg from '../src/data/vendors/dukascopy-aggregate.js';
+const aggregateDukascopy = agg.aggregateDukascopy || agg.default;
 
 const VENDOR = (process.env.DATA_VENDOR || "DUKA").toUpperCase();
 const SYMBOL = (process.env.DUKA_SYMBOL || "EURUSD").toUpperCase();
