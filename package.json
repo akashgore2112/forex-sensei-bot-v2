@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "description": "Production-grade swing signal bot (Mean Reversion core, Momentum optional, AI validation gate).",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev:run": "node scripts/hello.js",
     "dev:lint": "eslint .",
@@ -16,21 +18,24 @@
     "data:duka:build": "node scripts/build-candles.js"
   },
   "lint-staged": {
-    "*.{js,jsx,ts,tsx}": ["eslint --fix --max-warnings=0", "prettier --write"],
-    "*.{json,md,yml,yaml}": ["prettier --write"]
+    "*.{js,jsx,ts,tsx}": [
+      "eslint --fix --max-warnings=0",
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ]
   },
-  {
   "dependencies": {
     "dukascopy-node": "^1.43.0",
     "dotenv": "^16.4.5"
-  }
-},
+  },
   "devDependencies": {
     "eslint": "8.57.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-import": "^2.29.1",
     "husky": "^9.0.11",
-    "lint-staged": "^16.2.3",
+    "lint-staged": "^15.2.2",
     "prettier": "^3.3.3"
   }
 }
