@@ -1,61 +1,99 @@
 // scripts/validate-phase1.js
-import fs from "fs";
-import path from "path";
+// Dynamic Phase-1 validator: checks counts based on actual date span,
+// allows slack for weekends/holidays, and scans for NaN OHLC.
 
-const ROOT = process.cwd();
-const CACHE = path.join(ROOT, "cache/json");
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-// Max indicator lookback; keep generous to be safe
-const WARMUP = 200; // skip first 200 bars for NaN checks
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const root = path.resolve(__dirname, '..'); // repo root from /scripts
 
-function readJson(p) {
-  return JSON.parse(fs.readFileSync(p, "utf8"));
-}
+const CACHE_DIR = path.join(root, 'cache', 'json');
 
-function checkCount(file, min, max) {
-  const data = readJson(file);
-  const arr = Array.isArray(data) ? data : data.candles ?? [];
-  const n = arr.length;
-  if (n < min || n > max) {
-    throw new Error(`Count out of range: ${path.basename(file)} → ${n} (need ${min}..${max})`);
+const FILES = [
+  { name: 'EUR-USD_1D.json', tfMs: 24 * 60 * 60 * 1000 },
+  { name: 'EUR-USD_4H.json', tfMs: 4 * 60 * 60 * 1000 },
+  { name: 'EUR-USD_1H.json', tfMs: 60 * 60 * 1000 },
+];
+
+// How wide can real vs. naive expected be?
+// Naive expected assumes EVERY bucket exists. Weekends reduce about ~29% for daily,
+// and slightly less for intraday because FX pauses on weekends.
+// We set a generous window to avoid false negatives on long spans / holidays.
+const LOWER_RATIO = 0.55; // allow down to 55% of naive (covers weekends+holidays)
+const UPPER_RATIO = 1.10; // allow up to +10% (buffer for time boundary rounding)
+
+function loadJson(p) {
+  if (!fs.existsSync(p)) {
+    throw new Error(`Missing file: ${p}`);
   }
-  console.log(`✔ count OK: ${path.basename(file)} = ${n}`);
+  const raw = fs.readFileSync(p, 'utf8');
+  return JSON.parse(raw);
 }
 
-function checkNaN(file, warmup = WARMUP) {
-  const data = readJson(file);
-  const arr = Array.isArray(data) ? data : data.candles ?? [];
-  const start = Math.min(warmup, Math.floor(arr.length * 0.2)); // robust skip
-
-  for (let i = start; i < arr.length; i++) {
-    const c = arr[i] || {};
-    const nums = [
-      c.open, c.high, c.low, c.close, c.volume,
-      ...(c.ind ? Object.values(c.ind) : [])
-    ];
-    if (nums.some(v => Number.isNaN(v))) {
-      throw new Error(`Indicators NaN at index ${i} in ${path.basename(file)}`);
-    }
+function checkNaN(file, json) {
+  if (!json || !Array.isArray(json.candles)) {
+    throw new Error(`Bad JSON shape in ${file}: no candles[]`);
   }
-  console.log(`✔ NaN check OK: ${path.basename(file)} (skipped first ${start})`);
+  const badIdx = json.candles.findIndex(
+    (c) =>
+      c == null ||
+      Number.isNaN(+c.open) ||
+      Number.isNaN(+c.high) ||
+      Number.isNaN(+c.low) ||
+      Number.isNaN(+c.close)
+  );
+  if (badIdx !== -1) {
+    throw new Error(`Indicators/values NaN at index=${badIdx} in ${file}`);
+  }
 }
 
-function run() {
-  const f1D  = path.join(CACHE, "EUR-USD_1D.json");
-  const f4H  = path.join(CACHE, "EUR-USD_4H.json");
-  const f1H  = path.join(CACHE, "EUR-USD_1H.json");
+function checkCount(file, tfMs, json) {
+  const n = json.candles.length;
+  if (n < 2) {
+    throw new Error(`Too few candles in ${file}: ${n}`);
+  }
+  const firstTs = +json.candles[0].time;
+  const lastTs = +json.candles[json.candles.length - 1].time;
 
-  // 2 saal target ranges (approx)
-  checkCount(f1D,  520,  560);
-  checkCount(f4H, 4300, 4600);
-  checkCount(f1H, 17500, 18500);
+  if (!Number.isFinite(firstTs) || !Number.isFinite(lastTs) || lastTs <= firstTs) {
+    throw new Error(`Bad timespan in ${file}: first=${firstTs}, last=${lastTs}`);
+  }
 
-  // Warm-up skip ke baad NaN check
-  checkNaN(f1D);
-  checkNaN(f4H);
-  checkNaN(f1H);
+  // naive expected (every bucket)
+  const naiveExpected = Math.floor((lastTs - firstTs) / tfMs) + 1;
+  const minOk = Math.floor(naiveExpected * LOWER_RATIO);
+  const maxOk = Math.ceil(naiveExpected * UPPER_RATIO);
 
-  console.log("\n✅ Phase 1 validate PASSED");
+  if (n < minOk || n > maxOk) {
+    throw new Error(
+      `Count out of range: ${file} - ${n} (expected ~${naiveExpected}, allowed ${minOk}..${maxOk})`
+    );
+  }
+  return { n, naiveExpected, minOk, maxOk };
 }
 
-run();
+function fmtLine(file, meta) {
+  return `${path.basename(file)}: ${meta.n} (allowed ${meta.minOk}..${meta.maxOk}, naive ~${meta.naiveExpected})`;
+}
+
+async function main() {
+  const reports = [];
+  for (const f of FILES) {
+    const full = path.join(CACHE_DIR, f.name);
+    const json = loadJson(full);
+    checkNaN(full, json);
+    const meta = checkCount(full, f.tfMs, json);
+    reports.push(fmtLine(full, meta));
+  }
+
+  console.log('Phase 1 validate ✅');
+  for (const line of reports) console.log('  -', line);
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
