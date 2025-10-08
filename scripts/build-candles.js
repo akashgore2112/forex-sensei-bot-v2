@@ -1,15 +1,12 @@
 // scripts/build-candles.js
-// OLD
-// import { aggregateDukascopy } from '../src/data/vendors/dukascopy-aggregate.js';
-
-// NEW (resilient to default OR named)
+// Resilient import: works if aggregator exports named or default
 import * as agg from '../src/data/vendors/dukascopy-aggregate.js';
 const aggregateDukascopy = agg.aggregateDukascopy || agg.default;
 
 const VENDOR = (process.env.DATA_VENDOR || "DUKA").toUpperCase();
 const SYMBOL = (process.env.DUKA_SYMBOL || "EURUSD").toUpperCase();
 
-/** basic rolling SMA without NaN (pre-warmup uses close to seed values) */
+/** basic rolling SMA without NaN (pre-warm uses close) */
 function addSMA(candles, key, period) {
   let sum = 0;
   for (let i = 0; i < candles.length; i++) {
@@ -20,7 +17,6 @@ function addSMA(candles, key, period) {
   }
 }
 
-/** minimal indicators required by validator (no NaN at the head) */
 function addBasicIndicators(candles) {
   addSMA(candles, "sma20", 20);
   addSMA(candles, "sma50", 50);
@@ -42,10 +38,9 @@ function addBasicIndicators(candles) {
   });
   if (!out) process.exit(1);
 
-  // add indicators without NaNs
+  // indicators with no NaNs
   ["1H", "4H", "1D"].forEach((tf) => addBasicIndicators(out[tf].candles));
 
-  // overwrite cache/json to match existing pipeline expectations
   const fs = await import("node:fs/promises");
   await fs.writeFile("cache/json/EUR-USD_1H.json", JSON.stringify(out["1H"]));
   await fs.writeFile("cache/json/EUR-USD_4H.json", JSON.stringify(out["4H"]));
