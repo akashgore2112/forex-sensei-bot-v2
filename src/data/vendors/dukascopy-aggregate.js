@@ -113,7 +113,9 @@ export async function aggregateDukascopy({
           if (px0) {
             upsertBar(h1, floorToHourUTC(px0.ts), px0);
             upsertBar(h4, floorTo4HUTC(px0.ts), px0);
-            upsertBar(d1, floorToDayUTC(px0.ts), px0);
+            // 1D bars: Mon–Fri only (skip weekends)
+            const wd0 = px0.ts.getUTCDay();
+            if (wd0 >= 1 && wd0 <= 5) upsertBar(d1, floorToDayUTC(px0.ts), px0);
           }
         }
         headerParsed = true;
@@ -122,9 +124,13 @@ export async function aggregateDukascopy({
 
       const px = parseCsvLine(line, idxMap);
       if (!px) continue;
+
       upsertBar(h1, floorToHourUTC(px.ts), px);
       upsertBar(h4, floorTo4HUTC(px.ts), px);
-      upsertBar(d1, floorToDayUTC(px.ts), px);
+
+      // 1D bars: Mon–Fri only (skip weekends)
+      const wd = px.ts.getUTCDay();
+      if (wd >= 1 && wd <= 5) upsertBar(d1, floorToDayUTC(px.ts), px);
     }
   }
 
