@@ -1,4 +1,2 @@
-# Don’t lint generated / large data
 data/
 cache/
-dist/
