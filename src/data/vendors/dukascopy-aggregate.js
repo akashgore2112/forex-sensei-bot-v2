@@ -1,37 +1,62 @@
 // src/data/vendors/dukascopy-aggregate.js
-// Reads monthly CSVs produced by dukascopy-node (m1 bid CSV),
-// aggregates to H1/H4/D1 OHLC. It is defensive against empty buckets.
+// Robust aggregator for dukascopy-node CSV (m1 bid):
+// - supports comma or semicolon delimiters
+// - detects timestamp as ISO, epoch-ms, or epoch-sec
+// - aggregates to H1 / H4 / D1 UTC OHLC
 
 import fs from 'fs';
 import path from 'path';
 
 function listMonthFiles(monthDir) {
-  // expect files like: eurusd-m1-bid-YYYY-MM-01_to_YYYY-MM-31.csv (your naming)
-  // we simply read all .csv in the directory.
   return fs
     .readdirSync(monthDir, { withFileTypes: true })
-    .filter((d) => d.isFile() && d.name.endsWith('.csv'))
+    .filter((d) => d.isFile() && d.name.toLowerCase().endsWith('.csv'))
     .map((d) => path.join(monthDir, d.name))
     .sort();
 }
 
+function parseTs(raw) {
+  const s = (raw || '').trim();
+  if (!s) return NaN;
+
+  // Pure digits? try epoch
+  if (/^\d+$/.test(s)) {
+    const n = Number(s);
+    if (!Number.isFinite(n)) return NaN;
+    // Heuristic: seconds (<= 10 digits) vs millis (>= 13 digits)
+    if (s.length <= 10) return n * 1000; // epoch seconds
+    return n; // epoch millis
+  }
+
+  // Fallback: ISO string
+  const iso = Date.parse(s);
+  return Number.isFinite(iso) ? iso : NaN;
+}
+
 function* iterateCsvRows(file) {
-  // dukascopy-node CSV header typically:
-  // "timestamp,open,high,low,close" (no volume when bid-only)
   const text = fs.readFileSync(file, 'utf8');
-  const lines = text.split(/\r?\n/);
+
+  // Normalize line endings, trim BOM if any
+  const src = text.replace(/\r/g, '').replace(/^\uFEFF/, '');
+  const lines = src.split('\n');
   if (lines.length <= 1) return;
-  // skip header
+
+  // First line is header; we only need column order to confirm delimiter
+  const header = lines[0].trim();
+  const delim = header.includes(';') ? ';' : ',';
+
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i].trim();
     if (!line) continue;
-    const parts = line.split(','); // dukascopy-node uses commas
+    const parts = line.split(delim);
     if (parts.length < 5) continue;
-    const ts = +new Date(parts[0]); // ISO timestamp
-    const o = +parts[1];
-    const h = +parts[2];
-    const l = +parts[3];
-    const c = +parts[4];
+
+    const ts = parseTs(parts[0]);
+    const o = Number(parts[1]);
+    const h = Number(parts[2]);
+    const l = Number(parts[3]);
+    const c = Number(parts[4]);
+
     if (
       Number.isFinite(ts) &&
       Number.isFinite(o) &&
@@ -51,6 +76,7 @@ function* iterateAllMinutes(rawDir) {
     .filter((d) => d.isDirectory())
     .map((d) => d.name)
     .sort();
+
   for (const m of months) {
     const monthDir = path.join(rawDir, m);
     for (const f of listMonthFiles(monthDir)) {
@@ -59,10 +85,8 @@ function* iterateAllMinutes(rawDir) {
   }
 }
 
-function bucketKey(ts, sizeMs, tzOffset = 0) {
-  // All UTC; ensure bucket aligns on sizeMs
-  const t = ts + tzOffset;
-  return Math.floor(t / sizeMs) * sizeMs - tzOffset;
+function bucketKey(ts, sizeMs) {
+  return Math.floor(ts / sizeMs) * sizeMs; // UTC floors to bucket start
 }
 
 function finalizeBucket(b) {
@@ -77,43 +101,34 @@ function finalizeBucket(b) {
   };
 }
 
-function aggregate(stream, sizeMs) {
+function aggregate(minutes, sizeMs) {
   const out = [];
   let cur = null;
 
-  for (const { ts, o, h, l, c } of stream) {
-    const key = bucketKey(ts, sizeMs, 0); // UTC
+  for (const { ts, o, h, l, c } of minutes) {
+    const key = bucketKey(ts, sizeMs);
+
     if (!cur || key !== cur.key) {
-      // flush previous
       const fin = finalizeBucket(cur);
       if (fin) out.push(fin);
-      // start new
       cur = { key, open: o, high: h, low: l, close: c, count: 1 };
       continue;
-    }
-    // same bucket
-    if (o < cur.openTimeTs) {
-      // never happens with minute order, but keep it safe
-      cur.open = o;
     }
     cur.high = Math.max(cur.high, h);
     cur.low = Math.min(cur.low, l);
     cur.close = c;
     cur.count++;
   }
-
-  // flush tail
   const fin = finalizeBucket(cur);
   if (fin) out.push(fin);
-
   return out;
 }
 
 export function aggregateDukascopy(rawDir) {
-  // Build a fresh minute iterator every call (so we can reuse for each TF)
-  const minutes = [...iterateAllMinutes(rawDir)]; // materialize once
-  const MINUTE = 60 * 1000;
-  const H1 = 60 * MINUTE;
+  // materialize minutes once; reuse for all TFs
+  const minutes = [...iterateAllMinutes(rawDir)];
+  const MIN = 60 * 1000;
+  const H1 = 60 * MIN;
   const H4 = 4 * H1;
   const D1 = 24 * H1;
 
