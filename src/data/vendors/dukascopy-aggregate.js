@@ -1,172 +1,125 @@
 // src/data/vendors/dukascopy-aggregate.js
-import fs from "node:fs";
-import fsp from "node:fs/promises";
-import path from "node:path";
-import readline from "node:readline";
+// Reads monthly CSVs produced by dukascopy-node (m1 bid CSV),
+// aggregates to H1/H4/D1 OHLC. It is defensive against empty buckets.
 
-const ensureDir = async (p) => fsp.mkdir(p, { recursive: true });
+import fs from 'fs';
+import path from 'path';
 
-/** parse a CSV line -> { ts, o, h, l, c } (tolerates either header names or raw values) */
-const parseCsvLine = (line, idxMap) => {
-  const parts = line.split(",");
-  const tRaw = parts[idxMap.time]?.trim();
-  const o = Number(parts[idxMap.open]);
-  const h = Number(parts[idxMap.high]);
-  const l = Number(parts[idxMap.low]);
-  const c = Number(parts[idxMap.close]);
-  if (!tRaw || Number.isNaN(o) || Number.isNaN(h) || Number.isNaN(l) || Number.isNaN(c)) return null;
+function listMonthFiles(monthDir) {
+  // expect files like: eurusd-m1-bid-YYYY-MM-01_to_YYYY-MM-31.csv (your naming)
+  // we simply read all .csv in the directory.
+  return fs
+    .readdirSync(monthDir, { withFileTypes: true })
+    .filter((d) => d.isFile() && d.name.endsWith('.csv'))
+    .map((d) => path.join(monthDir, d.name))
+    .sort();
+}
 
-  let ts;
-  if (/^\d+$/.test(tRaw)) ts = new Date(Number(tRaw)); // epoch ms
-  else ts = new Date(tRaw);                             // ISO-like string
-  if (Number.isNaN(ts.getTime())) return null;
-
-  return { ts, o, h, l, c };
-};
-
-const detectHeaderIndexes = (headerLine) => {
-  const cols = headerLine.split(",").map((s) => s.trim().toLowerCase());
-  const find = (names) => {
-    for (const nm of names) {
-      const i = cols.indexOf(nm);
-      if (i !== -1) return i;
+function* iterateCsvRows(file) {
+  // dukascopy-node CSV header typically:
+  // "timestamp,open,high,low,close" (no volume when bid-only)
+  const text = fs.readFileSync(file, 'utf8');
+  const lines = text.split(/\r?\n/);
+  if (lines.length <= 1) return;
+  // skip header
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    const parts = line.split(','); // dukascopy-node uses commas
+    if (parts.length < 5) continue;
+    const ts = +new Date(parts[0]); // ISO timestamp
+    const o = +parts[1];
+    const h = +parts[2];
+    const l = +parts[3];
+    const c = +parts[4];
+    if (
+      Number.isFinite(ts) &&
+      Number.isFinite(o) &&
+      Number.isFinite(h) &&
+      Number.isFinite(l) &&
+      Number.isFinite(c)
+    ) {
+      yield { ts, o, h, l, c };
     }
-    return -1;
-  };
-  return {
-    time:  find(["time", "timestamp", "date"]),
-    open:  find(["open", "bid_open", "bidopen"]),
-    high:  find(["high", "bid_high", "bidhigh"]),
-    low:   find(["low", "bid_low", "bidlow"]),
-    close: find(["close", "bid_close", "bidclose"]),
-  };
-};
-
-const floorToHourUTC = (d) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), d.getUTCHours(), 0, 0, 0);
-const floorTo4HUTC   = (d) => {
-  const h = d.getUTCHours();
-  const base = h - (h % 4);
-  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), base, 0, 0, 0);
-};
-const floorToDayUTC  = (d) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0);
-
-const upsertBar = (map, key, px) => {
-  let bar = map.get(key);
-  if (!bar) {
-    bar = { t: key, open: px.o, high: px.h, low: px.l, close: px.c, volume: null };
-    map.set(key, bar);
-    return;
   }
-  if (px.h > bar.high) bar.high = px.h;
-  if (px.l < bar.low)  bar.low  = px.l;
-  bar.close = px.c;
-};
+}
 
-const readAllCsv = async (rootDir) => {
-  const months = (await fsp.readdir(rootDir, { withFileTypes: true }))
-    .filter((d) => d.isDirectory() && /^\d{4}-\d{2}$/.test(d.name))
+function* iterateAllMinutes(rawDir) {
+  // rawDir = data/raw/duka/EURUSD
+  const months = fs
+    .readdirSync(rawDir, { withFileTypes: true })
+    .filter((d) => d.isDirectory())
     .map((d) => d.name)
     .sort();
-  const files = [];
   for (const m of months) {
-    const monthDir = path.join(rootDir, m);
-    const fList = await fsp.readdir(monthDir);
-    for (const f of fList) if (f.endsWith(".csv")) files.push(path.join(monthDir, f));
-  }
-  files.sort();
-  return files;
-};
-
-export async function aggregateDukascopy({
-  symbol = "EURUSD",
-  rawRoot = "data/raw/duka",
-  outRoot = "data/candles/duka",
-  cacheRoot = "cache/json",
-} = {}) {
-  const instDir = path.join(rawRoot, symbol);
-  const allCsv = await readAllCsv(instDir);
-  if (allCsv.length === 0) {
-    console.log(`[aggregate] No CSV files found at ${instDir}`);
-    return null;
-  }
-
-  const h1 = new Map();
-  const h4 = new Map();
-  const d1 = new Map();
-
-  for (const file of allCsv) {
-    const rl = readline.createInterface({ input: fs.createReadStream(file, { encoding: "utf8" }), crlfDelay: Infinity });
-    let headerParsed = false;
-    let idxMap = null;
-
-    for await (const line of rl) {
-      if (!line) continue;
-
-      if (!headerParsed) {
-        idxMap = detectHeaderIndexes(line);
-
-        // If header wasn't recognized, treat first line as data (fallback index map),
-        // then keep reading the rest as pure data lines.
-        if (Object.values(idxMap).some((i) => i === -1)) {
-          idxMap = { time: 0, open: 1, high: 2, low: 3, close: 4 };
-          const px0 = parseCsvLine(line, idxMap);
-          if (px0) {
-            upsertBar(h1, floorToHourUTC(px0.ts), px0);
-            upsertBar(h4, floorTo4HUTC(px0.ts), px0);
-            // 1D bars: Mon–Fri only (skip weekends)
-            const wd0 = px0.ts.getUTCDay();
-            if (wd0 >= 1 && wd0 <= 5) upsertBar(d1, floorToDayUTC(px0.ts), px0);
-          }
-        }
-        headerParsed = true;
-        continue;
-      }
-
-      const px = parseCsvLine(line, idxMap);
-      if (!px) continue;
-
-      upsertBar(h1, floorToHourUTC(px.ts), px);
-      upsertBar(h4, floorTo4HUTC(px.ts), px);
-
-      // 1D bars: Mon–Fri only (skip weekends)
-      const wd = px.ts.getUTCDay();
-      if (wd >= 1 && wd <= 5) upsertBar(d1, floorToDayUTC(px.ts), px);
+    const monthDir = path.join(rawDir, m);
+    for (const f of listMonthFiles(monthDir)) {
+      yield* iterateCsvRows(f);
     }
   }
+}
 
-  // finalize → sorted arrays
-  const toCandles = (m) =>
-    Array.from(m.keys())
-      .sort((a, b) => a - b)
-      .map((t) => ({
-        time: new Date(t).toISOString(),
-        open: m.get(t).open,
-        high: m.get(t).high,
-        low:  m.get(t).low,
-        close:m.get(t).close,
-        volume: null,
-      }));
+function bucketKey(ts, sizeMs, tzOffset = 0) {
+  // All UTC; ensure bucket aligns on sizeMs
+  const t = ts + tzOffset;
+  return Math.floor(t / sizeMs) * sizeMs - tzOffset;
+}
 
-  const symOut = "EUR-USD"; // keep file naming compatible with existing pipeline
-  const out = {
-    "1H": { symbol: symOut, timeframe: "1H", candles: toCandles(h1), meta: { gaps: 0 } },
-    "4H": { symbol: symOut, timeframe: "4H", candles: toCandles(h4), meta: { gaps: 0 } },
-    "1D": { symbol: symOut, timeframe: "1D", candles: toCandles(d1), meta: { gaps: 0 } },
+function finalizeBucket(b) {
+  if (!b || b.count === 0) return null;
+  return {
+    time: b.key,
+    open: b.open,
+    high: b.high,
+    low: b.low,
+    close: b.close,
+    volume: null,
   };
+}
 
-  await ensureDir(outRoot);
-  await ensureDir(cacheRoot);
+function aggregate(stream, sizeMs) {
+  const out = [];
+  let cur = null;
 
-  // persist both to data/candles (for inspection) and cache/json (for the rest of the app)
-  await fsp.writeFile(path.join(outRoot,  `EUR-USD_1H.json`), JSON.stringify(out["1H"]));
-  await fsp.writeFile(path.join(outRoot,  `EUR-USD_4H.json`), JSON.stringify(out["4H"]));
-  await fsp.writeFile(path.join(outRoot,  `EUR-USD_1D.json`), JSON.stringify(out["1D"]));
-  await fsp.writeFile(path.join(cacheRoot, `EUR-USD_1H.json`), JSON.stringify(out["1H"]));
-  await fsp.writeFile(path.join(cacheRoot, `EUR-USD_4H.json`), JSON.stringify(out["4H"]));
-  await fsp.writeFile(path.join(cacheRoot, `EUR-USD_1D.json`), JSON.stringify(out["1D"]));
+  for (const { ts, o, h, l, c } of stream) {
+    const key = bucketKey(ts, sizeMs, 0); // UTC
+    if (!cur || key !== cur.key) {
+      // flush previous
+      const fin = finalizeBucket(cur);
+      if (fin) out.push(fin);
+      // start new
+      cur = { key, open: o, high: h, low: l, close: c, count: 1 };
+      continue;
+    }
+    // same bucket
+    if (o < cur.openTimeTs) {
+      // never happens with minute order, but keep it safe
+      cur.open = o;
+    }
+    cur.high = Math.max(cur.high, h);
+    cur.low = Math.min(cur.low, l);
+    cur.close = c;
+    cur.count++;
+  }
 
-  console.log(
-    `[aggregate] done: 1H=${out["1H"].candles.length}, 4H=${out["4H"].candles.length}, 1D=${out["1D"].candles.length}`
-  );
+  // flush tail
+  const fin = finalizeBucket(cur);
+  if (fin) out.push(fin);
+
   return out;
+}
+
+export function aggregateDukascopy(rawDir) {
+  // Build a fresh minute iterator every call (so we can reuse for each TF)
+  const minutes = [...iterateAllMinutes(rawDir)]; // materialize once
+  const MINUTE = 60 * 1000;
+  const H1 = 60 * MINUTE;
+  const H4 = 4 * H1;
+  const D1 = 24 * H1;
+
+  return {
+    h1: aggregate(minutes, H1),
+    h4: aggregate(minutes, H4),
+    d1: aggregate(minutes, D1),
+  };
 }
