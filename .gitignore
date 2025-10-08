@@ -1,7 +1,21 @@
+# Node / tooling
 node_modules/
 .env
-.cache/
-cache/
+.DS_Store
+
+# Build outputs
 dist/
 coverage/
-.DS_Store
+
+# Caches
+.cache/
+cache/
+
+# Our data (big files — never commit)
+data/raw/
+data/candles/
+
+# Logs & misc
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
