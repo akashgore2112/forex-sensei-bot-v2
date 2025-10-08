@@ -1,52 +1,106 @@
 // scripts/build-candles.js
-// Resilient import: works if aggregator exports named or default
-import * as agg from '../src/data/vendors/dukascopy-aggregate.js';
-const aggregateDukascopy = agg.aggregateDukascopy || agg.default;
+// Build pipeline for DUKA: aggregate minute -> H1/H4/D1,
+// sanitize, write to data/candles/duka and cache/json.
 
-const VENDOR = (process.env.DATA_VENDOR || "DUKA").toUpperCase();
-const SYMBOL = (process.env.DUKA_SYMBOL || "EURUSD").toUpperCase();
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-/** basic rolling SMA without NaN (pre-warm uses close) */
-function addSMA(candles, key, period) {
-  let sum = 0;
-  for (let i = 0; i < candles.length; i++) {
-    const c = candles[i].close;
-    sum += c;
-    if (i >= period) sum -= candles[i - period].close;
-    candles[i][key] = i >= period - 1 ? +(sum / period).toFixed(5) : +c.toFixed(5);
-  }
+import { aggregateDukascopy } from '../src/data/vendors/dukascopy-aggregate.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const root = path.resolve(__dirname, '..');
+
+const RAW_BASE = path.join(root, 'data', 'raw', 'duka');
+const CANDLES_DIR = path.join(root, 'data', 'candles', 'duka');
+const CACHE_DIR = path.join(root, 'cache', 'json');
+
+const SYMBOL_ENV = process.env.DUKA_SYMBOL || process.env.INSTRUMENT || 'EURUSD';
+const SYMBOL_OUT = 'EUR-USD'; // keep same downstream shape/files
+const TF_OUT = [
+  { key: '1H', file: `${SYMBOL_OUT}_1H.json` },
+  { key: '4H', file: `${SYMBOL_OUT}_4H.json` },
+  { key: '1D', file: `${SYMBOL_OUT}_1D.json` },
+];
+
+function ensureDir(p) {
+  fs.mkdirSync(p, { recursive: true });
 }
 
-function addBasicIndicators(candles) {
-  addSMA(candles, "sma20", 20);
-  addSMA(candles, "sma50", 50);
-  addSMA(candles, "sma200", 200);
+function isFiniteOHLC(c) {
+  return (
+    c &&
+    Number.isFinite(+c.time) &&
+    Number.isFinite(+c.open) &&
+    Number.isFinite(+c.high) &&
+    Number.isFinite(+c.low) &&
+    Number.isFinite(+c.close)
+  );
 }
 
-(async () => {
-  if (VENDOR !== "DUKA") {
-    console.log(`[build] DATA_VENDOR=${VENDOR} (non-DUKA) — skipped in this step.`);
-    process.exit(0);
+function sanitize(series) {
+  // drop any candle with non-finite OHLC, sort by time, de-dupe
+  const clean = series.filter(isFiniteOHLC).sort((a, b) => +a.time - +b.time);
+  const dedup = [];
+  let lastT = null;
+  for (const c of clean) {
+    if (+c.time !== lastT) {
+      dedup.push(c);
+      lastT = +c.time;
+    }
   }
+  return dedup;
+}
 
-  console.log(`[build] vendor=DUKA symbol=${SYMBOL} → aggregate to 1H/4H/1D JSON...`);
-  const out = await aggregateDukascopy({
-    symbol: SYMBOL,
-    rawRoot: "data/raw/duka",
-    outRoot: "data/candles/duka",
-    cacheRoot: "cache/json",
-  });
-  if (!out) process.exit(1);
+function wrap(symbol, timeframe, candles) {
+  return {
+    symbol,
+    timeframe,
+    candles,
+    meta: { source: 'DUKASCOPY', generatedAt: new Date().toISOString() },
+  };
+}
 
-  // indicators with no NaNs
-  ["1H", "4H", "1D"].forEach((tf) => addBasicIndicators(out[tf].candles));
+async function main() {
+  const rawDir = path.join(RAW_BASE, SYMBOL_ENV);
+  ensureDir(CANDLES_DIR);
+  ensureDir(CACHE_DIR);
 
-  const fs = await import("node:fs/promises");
-  await fs.writeFile("cache/json/EUR-USD_1H.json", JSON.stringify(out["1H"]));
-  await fs.writeFile("cache/json/EUR-USD_4H.json", JSON.stringify(out["4H"]));
-  await fs.writeFile("cache/json/EUR-USD_1D.json", JSON.stringify(out["1D"]));
+  console.log(`[build] vendor=DUKA symbol=${SYMBOL_ENV} -> aggregate to 1H/4H/1D JSON ...`);
+  const agg = await aggregateDukascopy(rawDir);
+
+  // sanitize per TF
+  const h1 = sanitize(agg.h1);
+  const h4 = sanitize(agg.h4);
+  const d1 = sanitize(agg.d1);
 
   console.log(
-    `[build] OK — candles: 1H=${out["1H"].candles.length}, 4H=${out["4H"].candles.length}, 1D=${out["1D"].candles.length}`
+    `[aggregated] ok — candles: 1H=${h1.length}, 4H=${h4.length}, 1D=${d1.length}`
   );
-})();
+
+  // write to data/candles/duka
+  const outMap = {
+    '1H': wrap(SYMBOL_OUT, '1H', h1),
+    '4H': wrap(SYMBOL_OUT, '4H', h4),
+    '1D': wrap(SYMBOL_OUT, '1D', d1),
+  };
+
+  for (const { key, file } of TF_OUT) {
+    const p = path.join(CANDLES_DIR, file);
+    fs.writeFileSync(p, JSON.stringify(outMap[key]));
+  }
+
+  // mirror to cache/json with same filenames used by the rest of the app
+  for (const { key, file } of TF_OUT) {
+    const p = path.join(CACHE_DIR, file);
+    fs.writeFileSync(p, JSON.stringify(outMap[key]));
+  }
+
+  console.log('[build] done. Wrote both data/candles/duka and cache/json');
+}
+
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
