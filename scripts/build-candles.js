@@ -4,25 +4,19 @@ import { aggregateDukascopy } from "../src/data/vendors/dukascopy-aggregate.js";
 const VENDOR = (process.env.DATA_VENDOR || "DUKA").toUpperCase();
 const SYMBOL = (process.env.DUKA_SYMBOL || "EURUSD").toUpperCase();
 
-/** basic rolling SMA without NaN (pre-warmup me close se fill) */
+/** basic rolling SMA without NaN (pre-warmup uses close to seed values) */
 function addSMA(candles, key, period) {
   let sum = 0;
   for (let i = 0; i < candles.length; i++) {
     const c = candles[i].close;
     sum += c;
     if (i >= period) sum -= candles[i - period].close;
-    if (i >= period - 1) {
-      candles[i][key] = +(sum / period).toFixed(5);
-    } else {
-      // pre-warmup: NaN avoid
-      candles[i][key] = +c.toFixed(5);
-    }
+    candles[i][key] = i >= period - 1 ? +(sum / period).toFixed(5) : +c.toFixed(5);
   }
 }
 
-/** attach a minimal indicator set required by validation */
+/** minimal indicators required by validator (no NaN at the head) */
 function addBasicIndicators(candles) {
-  // Feel free to adjust periods if your validator checks others
   addSMA(candles, "sma20", 20);
   addSMA(candles, "sma50", 50);
   addSMA(candles, "sma200", 200);
@@ -30,7 +24,7 @@ function addBasicIndicators(candles) {
 
 (async () => {
   if (VENDOR !== "DUKA") {
-    console.log(`[build] DATA_VENDOR=${VENDOR} (non-DUKA) — not handled in this step.`);
+    console.log(`[build] DATA_VENDOR=${VENDOR} (non-DUKA) — skipped in this step.`);
     process.exit(0);
   }
 
@@ -41,13 +35,12 @@ function addBasicIndicators(candles) {
     outRoot: "data/candles/duka",
     cacheRoot: "cache/json",
   });
-
   if (!out) process.exit(1);
 
-  // indicators (no NaN ever)
+  // add indicators without NaNs
   ["1H", "4H", "1D"].forEach((tf) => addBasicIndicators(out[tf].candles));
 
-  // overwrite cache/json with indicator-enriched series
+  // overwrite cache/json to match existing pipeline expectations
   const fs = await import("node:fs/promises");
   await fs.writeFile("cache/json/EUR-USD_1H.json", JSON.stringify(out["1H"]));
   await fs.writeFile("cache/json/EUR-USD_4H.json", JSON.stringify(out["4H"]));
