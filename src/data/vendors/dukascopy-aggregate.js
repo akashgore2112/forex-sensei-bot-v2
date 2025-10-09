@@ -1,140 +1,117 @@
 // src/data/vendors/dukascopy-aggregate.js
-// Robust aggregator for dukascopy-node CSV (m1 bid):
-// - supports comma or semicolon delimiters
-// - detects timestamp as ISO, epoch-ms, or epoch-sec
-// - aggregates to H1 / H4 / D1 UTC OHLC
-
 import fs from 'fs';
 import path from 'path';
 
-function listMonthFiles(monthDir) {
-  return fs
-    .readdirSync(monthDir, { withFileTypes: true })
-    .filter((d) => d.isFile() && d.name.toLowerCase().endsWith('.csv'))
-    .map((d) => path.join(monthDir, d.name))
-    .sort();
-}
-
-function parseTs(raw) {
-  const s = (raw || '').trim();
-  if (!s) return NaN;
-
-  // Pure digits? try epoch
-  if (/^\d+$/.test(s)) {
-    const n = Number(s);
-    if (!Number.isFinite(n)) return NaN;
-    // Heuristic: seconds (<= 10 digits) vs millis (>= 13 digits)
-    if (s.length <= 10) return n * 1000; // epoch seconds
-    return n; // epoch millis
-  }
-
-  // Fallback: ISO string
-  const iso = Date.parse(s);
-  return Number.isFinite(iso) ? iso : NaN;
-}
-
-function* iterateCsvRows(file) {
-  const text = fs.readFileSync(file, 'utf8');
-
-  // Normalize line endings, trim BOM if any
-  const src = text.replace(/\r/g, '').replace(/^\uFEFF/, '');
-  const lines = src.split('\n');
-  if (lines.length <= 1) return;
-
-  // First line is header; we only need column order to confirm delimiter
-  const header = lines[0].trim();
-  const delim = header.includes(';') ? ';' : ',';
-
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line) continue;
-    const parts = line.split(delim);
-    if (parts.length < 5) continue;
-
-    const ts = parseTs(parts[0]);
-    const o = Number(parts[1]);
-    const h = Number(parts[2]);
-    const l = Number(parts[3]);
-    const c = Number(parts[4]);
-
-    if (
-      Number.isFinite(ts) &&
-      Number.isFinite(o) &&
-      Number.isFinite(h) &&
-      Number.isFinite(l) &&
-      Number.isFinite(c)
-    ) {
-      yield { ts, o, h, l, c };
-    }
-  }
-}
-
-function* iterateAllMinutes(rawDir) {
-  // rawDir = data/raw/duka/EURUSD
-  const months = fs
-    .readdirSync(rawDir, { withFileTypes: true })
-    .filter((d) => d.isDirectory())
-    .map((d) => d.name)
-    .sort();
-
-  for (const m of months) {
-    const monthDir = path.join(rawDir, m);
-    for (const f of listMonthFiles(monthDir)) {
-      yield* iterateCsvRows(f);
-    }
-  }
-}
-
-function bucketKey(ts, sizeMs) {
-  return Math.floor(ts / sizeMs) * sizeMs; // UTC floors to bucket start
-}
-
-function finalizeBucket(b) {
-  if (!b || b.count === 0) return null;
-  return {
-    time: b.key,
-    open: b.open,
-    high: b.high,
-    low: b.low,
-    close: b.close,
-    volume: null,
-  };
-}
-
-function aggregate(minutes, sizeMs) {
+/**
+ * Recursively collect all *.csv files under `dir`.
+ */
+function collectCsvFiles(dir) {
   const out = [];
-  let cur = null;
-
-  for (const { ts, o, h, l, c } of minutes) {
-    const key = bucketKey(ts, sizeMs);
-
-    if (!cur || key !== cur.key) {
-      const fin = finalizeBucket(cur);
-      if (fin) out.push(fin);
-      cur = { key, open: o, high: h, low: l, close: c, count: 1 };
-      continue;
+  const stack = [dir];
+  while (stack.length) {
+    const d = stack.pop();
+    for (const ent of fs.readdirSync(d, { withFileTypes: true })) {
+      if (ent.isDirectory()) stack.push(path.join(d, ent.name));
+      else if (ent.isFile() && ent.name.toLowerCase().endsWith('.csv')) {
+        out.push(path.join(d, ent.name));
+      }
     }
-    cur.high = Math.max(cur.high, h);
-    cur.low = Math.min(cur.low, l);
-    cur.close = c;
-    cur.count++;
   }
-  const fin = finalizeBucket(cur);
-  if (fin) out.push(fin);
-  return out;
+  return out.sort();
 }
 
-export function aggregateDukascopy(rawDir) {
-  // materialize minutes once; reuse for all TFs
-  const minutes = [...iterateAllMinutes(rawDir)];
-  const MIN = 60 * 1000;
-  const H1 = 60 * MIN;
-  const H4 = 4 * H1;
-  const D1 = 24 * H1;
+/**
+ * Very tolerant CSV reader: handles ',' or ';' as separators, with/without header.
+ * Expected columns: time, open, high, low, close (Dukascopy m1 csv uses bid series).
+ */
+function parseCsvLine(line, sep) {
+  const parts = line.split(sep);
+  // dukascopy-node creates: timestamp, open, high, low, close  (no header)
+  // We accept 5 numeric columns; timestamp can be ISO or epoch.
+  if (parts.length < 5) return null;
+  const [tRaw, o, h, l, c] = parts.slice(0, 5).map((s) => s.trim());
+  const t = new Date(tRaw).getTime();
+  const open = Number(o);
+  const high = Number(h);
+  const low = Number(l);
+  const close = Number(c);
+  if (!Number.isFinite(t) || !Number.isFinite(open) || !Number.isFinite(high) || !Number.isFinite(low) || !Number.isFinite(close)) {
+    return null;
+  }
+  return { time: t, open, high, low, close };
+}
 
-  return {
-    h1: aggregate(minutes, H1),
-    h4: aggregate(minutes, H4),
-    d1: aggregate(minutes, D1),
-  };
+function readCsvFile(file) {
+  const raw = fs.readFileSync(file, 'utf8').trim();
+  if (!raw) return [];
+
+  // detect separator
+  const firstLine = raw.slice(0, raw.indexOf('\n') + 1);
+  const sep = (firstLine.includes(';') && !firstLine.includes(',')) ? ';' : ',';
+
+  const lines = raw.split(/\r?\n/).filter(Boolean);
+
+  // skip header if present
+  const startIdx = /^\D/i.test(lines[0][0]) || lines[0].toLowerCase().includes('timestamp') ? 1 : 0;
+
+  const rows = [];
+  for (let i = startIdx; i < lines.length; i++) {
+    const rec = parseCsvLine(lines[i], sep);
+    if (rec) rows.push(rec);
+  }
+  return rows;
+}
+
+/**
+ * Aggregate minute bars into 1H / 4H / 1D.
+ */
+function bucketize(rows) {
+  const h1 = new Map(); // key: UTC hour start epoch-ms
+  const h4 = new Map(); // 0,4,8,12,16,20
+  const d1 = new Map(); // 00:00 UTC
+
+  function upd(m, t, price) {
+    const ex = m.get(t);
+    if (!ex) m.set(t, { time: t, open: price, high: price, low: price, close: price });
+    else {
+      ex.high = Math.max(ex.high, price);
+      ex.low = Math.min(ex.low, price);
+      ex.close = price;
+    }
+  }
+
+  for (const r of rows) {
+    const dt = new Date(r.time);
+    const H = Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate(), dt.getUTCHours());
+    const D = Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate());
+    const H4 = Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate(), Math.floor(dt.getUTCHours() / 4) * 4);
+
+    upd(h1, H, r.close);
+    upd(h4, H4, r.close);
+    upd(d1, D, r.close);
+  }
+
+  const toArr = (m) => Array.from(m.values()).sort((a, b) => a.time - b.time);
+  return { h1: toArr(h1), h4: toArr(h4), d1: toArr(d1) };
+}
+
+/**
+ * Main aggregator API.
+ * @param {string} rawDir absolute path like …/data/raw/duka/EURUSD
+ * @returns {{h1:Array, h4:Array, d1:Array}}
+ */
+export async function aggregateDukascopy(rawDir) {
+  const files = collectCsvFiles(rawDir);
+  console.log(`[aggregate] scanning ${files.length} monthly CSV file(s) under ${rawDir}`);
+
+  if (files.length === 0) return { h1: [], h4: [], d1: [] };
+
+  let rows = [];
+  for (const f of files) {
+    const got = readCsvFile(f);
+    rows = rows.concat(got);
+  }
+  console.log(`[aggregate] parsed ${rows.length.toLocaleString()} minute row(s)`);
+
+  return bucketize(rows);
 }
