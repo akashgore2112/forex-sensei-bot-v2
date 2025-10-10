@@ -2,46 +2,41 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import '../src/utils/env.js';
-import { buildZones4H } from '../src/sr/range-levels.js';
+import { buildZonesTimeline } from '../src/sr/zones-timeline.js';
 import { detectMR } from '../src/strategies/meanReversion/detector.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CACHE = path.join(process.cwd(), 'cache', 'json');
 
-function loadJSON(name) {
-  const p = path.join(CACHE, name);
-  return JSON.parse(fs.readFileSync(p, 'utf8'));
-}
-function filterRange(arr, fromISO, toISO) {
-  const from = fromISO ? new Date(fromISO).toISOString() : null;
-  const to   = toISO   ? new Date(toISO).toISOString()   : null;
-  return arr.filter(c => (!from || c.time >= from) && (!to || c.time <= to));
-}
+const loadJSON = (name) => JSON.parse(fs.readFileSync(path.join(CACHE, name), 'utf8'));
+const filterRange = (arr, f, t) => {
+  const from = f ? new Date(f).toISOString() : null;
+  const to = t ? new Date(t).toISOString() : null;
+  return arr.filter(x => (!from || x.time >= from) && (!to || x.time <= to));
+};
 const mKey = (iso) => iso.slice(0, 7);
 
 async function main() {
   const args = Object.fromEntries(process.argv.slice(2).map(s => s.split('=')));
   const symbol = (args['--symbol'] || 'EUR-USD').toUpperCase();
-  const from = args['--from'];
-  const to = args['--to'];
+  const from = args['--from']; const to = args['--to'];
 
-  const h4 = filterRange(loadJSON(`${symbol}_4H.json`).candles, from, to);
-  const h1 = filterRange(loadJSON(`${symbol}_1H.json`).candles, from, to);
+  const h4All = loadJSON(`${symbol}_4H.json`).candles;
+  const h1All = loadJSON(`${symbol}_1H.json`).candles;
+  const h4 = filterRange(h4All, from, to);
+  const h1 = filterRange(h1All, from, to);
 
-  const zones = buildZones4H(h4, { lookback: 120, clusterBps: 15 });
-  const signals = detectMR({ h1, zones });
+  // rolling zones
+  const ztl = buildZonesTimeline(h4, { lookback: 120, clusterBps: 15 });
+  const signals = detectMR({ h1, zonesTimeline: ztl });
 
   const byMonth = {};
-  for (const s of signals) {
-    const k = mKey(s.time);
-    (byMonth[k] ||= []).push(s);
-  }
+  for (const s of signals) (byMonth[mKey(s.time)] ||= []).push(s);
 
   console.log(`MR scan for ${symbol} ${from || ''}..${to || ''}`);
   Object.entries(byMonth).sort().forEach(([mo, arr]) => {
     const buys = arr.filter(x => x.direction === 'BUY').length;
-    const sells = arr.length - buys;
-    console.log(`  ${mo}: total=${arr.length}, BUY=${buys}, SELL=${sells}`);
+    console.log(`  ${mo}: total=${arr.length}, BUY=${buys}, SELL=${arr.length - buys}`);
   });
 
   console.log('\nLast 5 signals:');
