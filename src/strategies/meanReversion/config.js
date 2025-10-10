@@ -3,20 +3,20 @@ export const MR_CONFIG = {
   rsiLow: 20,
   rsiHigh: 80,
   adxMax: 18,
-  levelTolBps: 12,     // 0.12%: zone ke bilkul paas
+  levelTolBps: 12,     // 0.12%
 
   // Zone quality
-  minTouches: 2,       // zone par kam se kam 2 touches
+  minTouches: 2,
 
-  // Confirmation rules (wick rejection)
+  // Confirmation (wick rejection around zone)
   useConfirmation: true,
-  minRejectionBps: 3,  // 0.03%: wick aur close me min gap  (SELL: (high-close)/zone, BUY: (close-low)/zone)
-  requireTouch: true,  // candle ne zone ko touch kiya ho (SELL: high >= zone, BUY: low <= zone)
+  minRejectionBps: 3,  // 0.03% wick vs close gap
+  requireTouch: true,  // candle actually touches zone
 
   // Risk model
-  atrSL: 1.5,          // SL = zone ± 1.5*ATR(14)
-  rr: 1.5,             // TP = SL distance * rr
+  atrSL: 1.5,
+  rr: 1.5,
 
-  // Debounce (same side repeated signals avoid)
+  // Debounce
   cooldownBars: 6
 };
