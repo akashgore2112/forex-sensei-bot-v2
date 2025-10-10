@@ -25,7 +25,7 @@ export function detectMR({ h1, zones, cfg = MR_CONFIG }) {
     }, null);
 
     // SELL near high
-    if (nearHigh && nearHigh.d <= cfg.levelTolBps && rsi >= cfg.rsiHigh && adx < cfg.adxMax) {
+    if (nearHigh && nearHigh.d <= cfg.levelTolBps && (nearHigh.z.touches || 0) >= (cfg.minTouches || 1) && c.rsi14 >= cfg.rsiHigh && c.adx14 < cfg.adxMax) {
       const sl = nearHigh.z.price + cfg.atrSL * atr;
       const entry = close;
       const tp = entry - cfg.rr * (sl - entry);
@@ -37,7 +37,8 @@ export function detectMR({ h1, zones, cfg = MR_CONFIG }) {
     }
 
     // BUY near low
-    if (nearLow && nearLow.d <= cfg.levelTolBps && rsi <= cfg.rsiLow && adx < cfg.adxMax) {
+    if (nearLow && nearLow.d <= cfg.levelTolBps && (nearLow.z.touches || 0) >= (cfg.minTouches || 1)
+  && c.rsi14 <= cfg.rsiLow && c.adx14 < cfg.adxMax) {
       const sl = nearLow.z.price - cfg.atrSL * atr;
       const entry = close;
       const tp = entry + cfg.rr * (entry - sl);
