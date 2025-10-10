@@ -1,43 +1,40 @@
+// src/strategies/meanReversion/config.js
 export const MR_CONFIG = {
   // --- Core MR thresholds ---
   rsiLow: 30,
   rsiHigh: 70,
-  adxMax: 25,
+  adxMax: 25,              // local noise guard
+  levelTolBps: 26,         // distance to zone to call "near" (0.26%)
 
-  // Zone proximity (bps = 0.01%)
-  levelTolBps: 28,        // was 24/26 → slightly wider so more candidates
+  // --- Zone quality (we let retest do the filtering) ---
+  minTouches: 1,
 
-  // Zone quality
-  minTouches: 1,          // retest-entry itself ensures quality
-
-  // Confirmation (still useful, but relaxed)
+  // --- Candle confirmation (kept conservative) ---
   useConfirmation: true,
-  requireTouch: false,
-  minRejectionBps: 1.2,   // wick vs close min
-  maxBodyFrac: 0.75,
-  minWickFrac: 0.30,
+  requireTouch: false,     // exact touch not mandatory if retest is good
+  minRejectionBps: 12,     // 12 bps wick vs close on the zone side
+  maxBodyFrac: 0.75,       // body <= 75% of candle range
+  minWickFrac: 0.35,       // zone-side wick >= 35% of range (tightened)
 
-  // Volatility guard
-  useVolGuard: true,
-  atrLookback: 20,
-  maxAtrMultiple: 2.4,
+  // --- Retest entry (works well in your runs) ---
+  retestBars: 6,           // lookahead bars after pinbar
+  retestTolBps: 20,        // retest must come within 20 bps of zone
+  confirmCloseAwayBps: 3,  // close should step away by ≥3 bps post-retest
 
-  // Retest entry window (main count booster)
-  retestBars: 24,         // was 6/7 → H1 me retest 10–24 bars common
-  retestTolBps: 28,       // was 20 → thoda wide so valid retests capture
-  confirmCloseAwayBps: 2, // was 3 → thoda soft (close slightly away from zone)
-
-  // Risk model
+  // --- Risk model ---
   atrSL: 1.8,
-  rr: 1.0,                // near TP to reduce timeouts
+  rr: 1.0,                 // simple R:R for robustness
 
-  // Debounce between consecutive entries near a zone
+  // --- Timeout ---
+  timeoutBars: 60,         // exit if neither SL/TP within 60 H bars
+
+  // --- Cooldown / de-dup ---
   cooldownBars: 6,
 
-  // Trend guard (keep realistic)
+  // --- Trend guard (explicitly OFF; your results are better) ---
+  useTrendGuard: false,    // <- primary switch used by scripts
+  useZoneTrend: false,     // <- alias for clarity (not required by scripts)
+  // If you ever enable it, these are the thresholds it would use:
   slopeBpsMax: 25,
   adxTrendMax: 28,
-
-  // Backtest-only
-  timeoutBars: 96,        // was 60 → H1 me 4 trading days approx (timeouts kam)
 };
