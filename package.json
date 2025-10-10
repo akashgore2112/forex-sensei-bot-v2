@@ -39,3 +39,9 @@
     "prettier": "^3.3.3"
   }
 }
+
+"scripts": {
+  "...": "...",
+  "scan:mr": "node scripts/scan-mr.js --symbol=EUR-USD"
+}
+
