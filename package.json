@@ -4,9 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Production-grade swing signal bot (Mean Reversion core, Momentum optional, AI validation gate).",
-  "engines": {
-    "node": ">=20"
-  },
+  "engines": { "node": ">=20" },
   "scripts": {
     "dev:run": "node scripts/hello.js",
     "dev:lint": "eslint .",
@@ -15,16 +13,12 @@
     "prepare": "husky",
     "data:duka:test-oct23": "INSTRUMENT=EURUSD DUKA_FROM_MONTH=2023-10 DUKA_TO_MONTH=2023-10 node scripts/duka-download.js",
     "data:duka:download": "node scripts/duka-download.js",
-    "data:duka:build": "node scripts/build-candles.js"
+    "data:duka:build": "node scripts/build-candles.js",
+    "scan:mr": "node scripts/scan-mr.js --symbol=EUR-USD"
   },
   "lint-staged": {
-    "*.{js,jsx,ts,tsx}": [
-      "eslint --fix --max-warnings=0",
-      "prettier --write"
-    ],
-    "*.{json,md,yml,yaml}": [
-      "prettier --write"
-    ]
+    "*.{js,jsx,ts,tsx}": ["eslint --fix --max-warnings=0", "prettier --write"],
+    "*.{json,md,yml,yaml}": ["prettier --write"]
   },
   "dependencies": {
     "dukascopy-node": "^1.43.0",
@@ -39,9 +33,3 @@
     "prettier": "^3.3.3"
   }
 }
-
-"scripts": {
-  "...": "...",
-  "scan:mr": "node scripts/scan-mr.js --symbol=EUR-USD"
-}
-
