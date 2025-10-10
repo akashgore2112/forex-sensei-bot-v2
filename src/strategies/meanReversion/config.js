@@ -27,8 +27,8 @@ export const MR_CONFIG = {
   confirmCloseAwayBps: 6,    // NEW: retest ke baad close zone se itna “door” hona chahiye
 
   // Risk model
-  atrSL: 1.8,
-  rr: 1.3,
+  atrSL: 2.4,
+  rr: 1.0,
   slBufferBps: 3,            // small SL buffer to avoid micro-stop
 
   // Debounce
