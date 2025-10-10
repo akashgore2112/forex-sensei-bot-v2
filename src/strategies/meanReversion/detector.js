@@ -1,52 +1,88 @@
 import { MR_CONFIG } from './config.js';
 
-// dist in basis points
-function distBps(price, level) {
-  return Math.abs((price - level) / level) * 10000;
-}
+function bps(a, b) { return Math.abs((a - b) / b) * 10000; }
 
 export function detectMR({ h1, zones, cfg = MR_CONFIG }) {
   const out = [];
-  if (!h1?.length || !zones) return out;
+  if (!Array.isArray(h1) || !zones) return out;
+
+  let lastSellIdx = -9999, lastBuyIdx = -9999;
 
   for (let i = 50; i < h1.length; i++) { // warmup skip
     const c = h1[i];
-    const adx = c.adx14, rsi = c.rsi14, atr = c.atr14, close = c.close;
-    if (adx == null || rsi == null || atr == null) continue;
+    const { open, high, low, close, rsi14, adx14, atr14, time } = c;
+    if (rsi14 == null || adx14 == null || atr14 == null) continue;
 
-    // nearest high/low zone
-    const nearHigh = zones.highs?.reduce((best, z) => {
-      const d = distBps(close, z.price);
+    // nearest zones
+    const nh = zones.highs?.reduce((best, z) => {
+      const d = bps(close, z.price);
       return d < (best?.d ?? Infinity) ? { z, d } : best;
     }, null);
-    const nearLow = zones.lows?.reduce((best, z) => {
-      const d = distBps(close, z.price);
+    const nl = zones.lows?.reduce((best, z) => {
+      const d = bps(close, z.price);
       return d < (best?.d ?? Infinity) ? { z, d } : best;
     }, null);
 
-    // SELL near high
-    if (nearHigh && nearHigh.d <= cfg.levelTolBps && (nearHigh.z.touches || 0) >= (cfg.minTouches || 1) && c.rsi14 >= cfg.rsiHigh && c.adx14 < cfg.adxMax) {
-      const sl = nearHigh.z.price + cfg.atrSL * atr;
-      const entry = close;
+    // -------- SELL near range-high --------
+    if (
+      nh &&
+      nh.d <= cfg.levelTolBps &&
+      (nh.z.touches || 0) >= cfg.minTouches &&
+      rsi14 >= cfg.rsiHigh &&
+      adx14 < cfg.adxMax &&
+      (i - lastSellIdx) >= cfg.cooldownBars &&
+      (!cfg.requireTouch || high >= nh.z.price) &&
+      (!cfg.useConfirmation || (
+        high >= nh.z.price && close < nh.z.price &&
+        bps(high, close) >= cfg.minRejectionBps   // wick rejection size
+      ))
+    ) {
+      // Risk anchored to zone
+      const sl = nh.z.price + cfg.atrSL * atr14;
+      const entry = close; // signal close
       const tp = entry - cfg.rr * (sl - entry);
       out.push({
-        time: c.time, direction: 'SELL', entry,
+        time, direction: 'SELL', entry,
         sl: Number(sl.toFixed(5)), tp: Number(tp.toFixed(5)),
-        ctx: { rsi, adx, distBps: Number(nearHigh.d.toFixed(2)), zone: Number(nearHigh.z.price.toFixed(5)), touches: nearHigh.z.touches }
+        ctx: {
+          rsi: rsi14, adx: adx14,
+          distBps: Number(nh.d.toFixed(2)),
+          zone: Number(nh.z.price.toFixed(5)),
+          touches: nh.z.touches
+        }
       });
+      lastSellIdx = i;
+      continue; // same bar me BUY avoid
     }
 
-    // BUY near low
-    if (nearLow && nearLow.d <= cfg.levelTolBps && (nearLow.z.touches || 0) >= (cfg.minTouches || 1)
-  && c.rsi14 <= cfg.rsiLow && c.adx14 < cfg.adxMax) {
-      const sl = nearLow.z.price - cfg.atrSL * atr;
+    // -------- BUY near range-low --------
+    if (
+      nl &&
+      nl.d <= cfg.levelTolBps &&
+      (nl.z.touches || 0) >= cfg.minTouches &&
+      rsi14 <= cfg.rsiLow &&
+      adx14 < cfg.adxMax &&
+      (i - lastBuyIdx) >= cfg.cooldownBars &&
+      (!cfg.requireTouch || low <= nl.z.price) &&
+      (!cfg.useConfirmation || (
+        low <= nl.z.price && close > nl.z.price &&
+        bps(close, low) >= cfg.minRejectionBps
+      ))
+    ) {
+      const sl = nl.z.price - cfg.atrSL * atr14;
       const entry = close;
       const tp = entry + cfg.rr * (entry - sl);
       out.push({
-        time: c.time, direction: 'BUY', entry,
+        time, direction: 'BUY', entry,
         sl: Number(sl.toFixed(5)), tp: Number(tp.toFixed(5)),
-        ctx: { rsi, adx, distBps: Number(nearLow.d.toFixed(2)), zone: Number(nearLow.z.price.toFixed(5)), touches: nearLow.z.touches }
+        ctx: {
+          rsi: rsi14, adx: adx14,
+          distBps: Number(nl.d.toFixed(2)),
+          zone: Number(nl.z.price.toFixed(5)),
+          touches: nl.z.touches
+        }
       });
+      lastBuyIdx = i;
     }
   }
   return out;
