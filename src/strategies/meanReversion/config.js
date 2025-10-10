@@ -1,44 +1,43 @@
-// src/strategies/meanReversion/config.js
 export const MR_CONFIG = {
-  // Core MR thresholds (balanced)
-  useZoneTrend: false,        // ⬅️ turn OFF the zone trend gate
-  rsiLow: 34,
-  rsiHigh: 66,
+  // --- Core MR thresholds ---
+  rsiLow: 30,
+  rsiHigh: 70,
   adxMax: 25,
-  levelTolBps: 26,          // zone se ~0.22% tak “near”
 
-  // Zone quality (retest entry model me touches ko zyada tight na rakho)
-  minTouches: 1,
+  // Zone proximity (bps = 0.01%)
+  levelTolBps: 28,        // was 24/26 → slightly wider so more candidates
 
-  // Candle confirmation (soft)
+  // Zone quality
+  minTouches: 1,          // retest-entry itself ensures quality
+
+  // Confirmation (still useful, but relaxed)
   useConfirmation: true,
   requireTouch: false,
-  minRejectionBps: 10,       // 0.10% wick advantage
-  maxBodyFrac: 0.75,         // body <= 75% of range
-  minWickFrac: 0.35,         // zone-side wick >= 30%
+  minRejectionBps: 1.2,   // wick vs close min
+  maxBodyFrac: 0.75,
+  minWickFrac: 0.30,
 
   // Volatility guard
   useVolGuard: true,
   atrLookback: 20,
-  maxAtrMultiple: 2.2,       // thoda tighter vs earlier 2.4
+  maxAtrMultiple: 2.4,
 
-  // Retest entry (NEW core)
-  retestBars: 7,            // “C-set”: retest window ≈ 1 day (H1 data)
-  retestTolBps: 14,          // zone proximity test
-  confirmCloseAwayBps: 6,    // NEW: retest ke baad close zone se itna “door” hona chahiye
+  // Retest entry window (main count booster)
+  retestBars: 18,         // was 6/7 → H1 me retest 10–24 bars common
+  retestTolBps: 24,       // was 20 → thoda wide so valid retests capture
+  confirmCloseAwayBps: 2, // was 3 → thoda soft (close slightly away from zone)
 
   // Risk model
-  atrSL: 2.4,
-  rr: 1.0,
-  slBufferBps: 3,            // small SL buffer to avoid micro-stop
+  atrSL: 1.8,
+  rr: 1.0,                // near TP to reduce timeouts
 
-  // Debounce
+  // Debounce between consecutive entries near a zone
   cooldownBars: 6,
 
-  // Trend guard (relaxed)
+  // Trend guard (keep realistic)
   slopeBpsMax: 25,
   adxTrendMax: 28,
 
-  // Backtest/engine control
-  timeoutBars: 60            // NEW: trade ko max 48 bars (≈2D) me close karao
+  // Backtest-only
+  timeoutBars: 96,        // was 60 → H1 me 4 trading days approx (timeouts kam)
 };
