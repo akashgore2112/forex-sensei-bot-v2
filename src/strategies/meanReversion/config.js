@@ -1,37 +1,44 @@
+// src/strategies/meanReversion/config.js
+
 export const MR_CONFIG = {
-  // Core MR thresholds
+  // ---- Core MR thresholds (oscillator + regime) ----
   rsiLow: 30,
   rsiHigh: 70,
-  adxMax: 25,
-  levelTolBps: 24,     // distance from zone to consider "near" (0.22%)
 
-  // Zone quality
-  minTouches: 1,       // open a bit; retest-entry itself is quality
+  // Trend guard (thoda conservative to avoid chasing trends)
+  adxMax: 24,        // pehle 25/28 the; thoda tighten
+  adxTrendMax: 26,
+  slopeBpsMax: 22,
 
-  // Confirmation (still useful, but retest does the heavy lifting)
+  // Price vs zone proximity
+  levelTolBps: 20,   // touch window tighter (Set B se tight)
+
+  // ---- Zone quality ----
+  minTouches: 2,     // 1 -> 2 (zone quality ↑)
+
+  // ---- Confirmation / rejection ----
   useConfirmation: true,
-  requireTouch: false,   // exact touch not mandatory
-  minRejectionBps: 1.2,  // wick vs close min
-  maxBodyFrac: 0.75,     // candle body <= 75% range
-  minWickFrac: 0.30,     // zone-side wick >= 30% range
+  requireTouch: false,       // exact pip touch not mandatory
+  minRejectionBps: 1.2,      // wick vs close min
+  maxBodyFrac: 0.75,         // body <= 75% range
+  minWickFrac: 0.30,         // zone-side wick >= 30% range
+  // optional: agar detector support karta ho:
+  // confirmCloseAwayBps: 6, // retest candle close zone se ≥6 bps doodh
 
-  // Volatility guard
+  // ---- Volatility guard ----
   useVolGuard: true,
   atrLookback: 20,
   maxAtrMultiple: 2.4,
 
-  // NEW — Retest entry
-  retestBars: 3,        // pinbar ke baad max kitne bars tak retest consider
-  retestTolBps: 14,     // zone ke itne bps ke andar wick/close aaye to enter
+  // ---- Retest entry window ----
+  retestBars: 2,      // quick rejection chahiye
+  retestTolBps: 10,   // retest tolerance tighter
 
-  // Risk model
-  atrSL: 1.8,
-  rr: 1.3,
+  // ---- Risk model / exits ----
+  atrSL: 2.2,         // SL wider to survive initial spike
+  rr: 1.1,            // TP closer so MR hit probability ↑
+  timeoutBars: 72,    // NEW: backtester yahi use karega (fallback 48)
 
-  // Debounce
+  // ---- Debounce ----
   cooldownBars: 6,
-
-  // Trend guard (relaxed)
-  slopeBpsMax: 25,
-  adxTrendMax: 28,
 };
