@@ -1,31 +1,37 @@
 export const MR_CONFIG = {
-  // --- Mean Reversion core (loosened) ---
+  // Core MR thresholds
   rsiLow: 30,
   rsiHigh: 70,
-  adxMax: 25,          // 22 -> 25
-  levelTolBps: 22,     // 18 -> 22 (0.22%)
-  minTouches: 1,       // 2 -> 1  (open up)
+  adxMax: 25,
+  levelTolBps: 22,     // distance from zone to consider "near" (0.22%)
 
-  // --- Confirmation (softer; keep quality but not too strict) ---
-  useConfirmation: false,
-  requireTouch: false,  // was true; wick must not "must-touch" exact level now
-  minRejectionBps: 1.2, // 2 -> 1.2
-  maxBodyFrac: 0.75,    // 0.6 -> 0.75
-  minWickFrac: 0.30,    // 0.4 -> 0.30
+  // Zone quality
+  minTouches: 1,       // open a bit; retest-entry itself is quality
 
-  // --- Volatility guard (relax) ---
+  // Confirmation (still useful, but retest does the heavy lifting)
+  useConfirmation: true,
+  requireTouch: false,   // exact touch not mandatory
+  minRejectionBps: 1.2,  // wick vs close min
+  maxBodyFrac: 0.75,     // candle body <= 75% range
+  minWickFrac: 0.30,     // zone-side wick >= 30% range
+
+  // Volatility guard
   useVolGuard: true,
   atrLookback: 20,
-  maxAtrMultiple: 2.4,  // 1.8 -> 2.4
+  maxAtrMultiple: 2.4,
 
-  // --- Risk model (a tad wider SL; modest RR) ---
+  // NEW — Retest entry
+  retestBars: 3,        // pinbar ke baad max kitne bars tak retest consider
+  retestTolBps: 12,     // zone ke itne bps ke andar wick/close aaye to enter
+
+  // Risk model
   atrSL: 1.8,
   rr: 1.3,
 
-  // --- Debounce ---
-  cooldownBars: 6,      // 8 -> 6
+  // Debounce
+  cooldownBars: 6,
 
-  // --- Trend guard (already fine; keep relaxed) ---
+  // Trend guard (relaxed)
   slopeBpsMax: 25,
-  adxTrendMax: 28
+  adxTrendMax: 28,
 };
