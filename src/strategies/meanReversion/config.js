@@ -23,8 +23,8 @@ export const MR_CONFIG = {
   maxAtrMultiple: 2.4,
 
   // Retest entry window (main count booster)
-  retestBars: 18,         // was 6/7 → H1 me retest 10–24 bars common
-  retestTolBps: 24,       // was 20 → thoda wide so valid retests capture
+  retestBars: 24,         // was 6/7 → H1 me retest 10–24 bars common
+  retestTolBps: 28,       // was 20 → thoda wide so valid retests capture
   confirmCloseAwayBps: 2, // was 3 → thoda soft (close slightly away from zone)
 
   // Risk model
