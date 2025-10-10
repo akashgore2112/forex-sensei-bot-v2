@@ -14,7 +14,8 @@
     "data:duka:test-oct23": "INSTRUMENT=EURUSD DUKA_FROM_MONTH=2023-10 DUKA_TO_MONTH=2023-10 node scripts/duka-download.js",
     "data:duka:download": "node scripts/duka-download.js",
     "data:duka:build": "node scripts/build-candles.js",
-    "scan:mr": "node scripts/scan-mr.js --symbol=EUR-USD"
+    "scan:mr": "node scripts/scan-mr.js --symbol=EUR-USD",
+    "bt:mr": "node scripts/backtest-mr.js --symbol=EUR-USD"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx}": ["eslint --fix --max-warnings=0", "prettier --write"],
@@ -32,8 +33,4 @@
     "lint-staged": "^15.2.2",
     "prettier": "^3.3.3"
   }
-}
-"scripts": {
-  "...": "...",
-  "bt:mr": "node scripts/backtest-mr.js --symbol=EUR-USD"
 }
