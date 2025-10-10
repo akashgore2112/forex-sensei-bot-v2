@@ -1,14 +1,13 @@
 // Build 4H range zones (high/low) with simple clustering.
-// Input: 4H candles [{time, open, high, low, close, atr14, ...}]
 // Output: { highs: [{price,touches}], lows: [{price,touches}] }
 
 export function buildZones4H(candles, { lookback = 120, clusterBps = 15 } = {}) {
-  if (!Array.isArray(candles) || candles.length === 0) return { highs: [], lows: [] };
+  if (!Array.isArray(candles) || candles.length < 10) return { highs: [], lows: [] };
+
   const end = candles.length - 1;
   const start = Math.max(0, end - lookback + 1);
   const slice = candles.slice(start, end + 1);
 
-  // 1) local swings
   const highs = [];
   const lows = [];
   for (let i = 2; i < slice.length - 2; i++) {
@@ -19,17 +18,15 @@ export function buildZones4H(candles, { lookback = 120, clusterBps = 15 } = {}) 
     if (isLow)  lows.push(c.low);
   }
 
-  // 2) cluster nearby levels (bps = basis points; 15 bps ~ 0.15%)
   function cluster(levels) {
-    if (levels.length === 0) return [];
-    const sorted = levels.slice().sort((a,b)=>a-b);
+    if (!levels.length) return [];
+    const sorted = levels.slice().sort((a, b) => a - b);
     const out = [];
-    const tol = (px) => (clusterBps / 10000) * px;
+    const tol = (px) => (clusterBps / 10000) * px; // bps → %
     let cur = { price: sorted[0], touches: 1 };
     for (let i = 1; i < sorted.length; i++) {
       const px = sorted[i];
       if (Math.abs(px - cur.price) <= tol(cur.price)) {
-        // merge
         cur.price = (cur.price * cur.touches + px) / (cur.touches + 1);
         cur.touches += 1;
       } else {
@@ -38,8 +35,7 @@ export function buildZones4H(candles, { lookback = 120, clusterBps = 15 } = {}) 
       }
     }
     out.push(cur);
-    // stronger zones first
-    out.sort((a,b)=> b.touches - a.touches);
+    out.sort((a, b) => b.touches - a.touches);
     return out;
   }
 
