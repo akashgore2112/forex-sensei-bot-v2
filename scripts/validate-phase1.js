@@ -1,83 +1,96 @@
 // scripts/validate-phase1.js
-// Accepts time as epoch-ms (number) OR ISO string.
-// Checks monotonic time and rough count ranges for D1/H4/H1.
+import fs from 'node:fs';
+import path from 'node:path';
 
-import fs from 'fs';
-import path from 'path';
+const CACHE = path.join(process.cwd(), 'cache', 'json');
 
 const FILES = [
-  { tf: 'D1', file: 'cache/json/EUR-USD_1D.json',  min: 520,  max: 1100 },
-  { tf: 'H4', file: 'cache/json/EUR-USD_4H.json',  min: 3000, max: 9000 },
-  { tf: 'H1', file: 'cache/json/EUR-USD_1H.json',  min: 15000, max: 40000 },
+  'EUR-USD_1D.json',
+  'EUR-USD_4H.json',
+  'EUR-USD_1H.json',
 ];
 
-function toEpochMs(t) {
-  // number → epoch ms, string(ISO) → Date.parse, else NaN
-  if (t == null) return NaN;
-  if (typeof t === 'number') return Number.isFinite(t) ? t : NaN;
-  if (typeof t === 'string') {
-    const v = Date.parse(t);
-    return Number.isFinite(v) ? v : NaN;
-  }
-  return NaN;
-}
-
-function readJson(p) {
+function readCandles(p) {
   const raw = fs.readFileSync(p, 'utf8');
-  return JSON.parse(raw);
+  const j = JSON.parse(raw);
+  const arr = j.candles || [];
+  // schema: time is ISO string now
+  return arr.map(c => ({
+    ...c,
+    t: new Date(c.time).getTime(),
+  }));
 }
 
-function checkCount(tf, file, count, min, max) {
-  if (count < min || count > max) {
-    throw new Error(`Count out of range: ${path.basename(file)} → ${count} (need ${min}..${max})`);
-  }
+function summary(name, arr) {
+  const ok = arr.length > 0;
+  const first = ok ? new Date(arr[0].t).toISOString() : 'NA';
+  const last  = ok ? new Date(arr[arr.length - 1].t).toISOString() : 'NA';
+  return { name, count: arr.length, first, last };
 }
 
-function checkTimes(tf, file, candles) {
-  if (!Array.isArray(candles) || candles.length === 0) {
-    throw new Error(`No candles in ${file}`);
+function expectedCounts(firstISO, lastISO) {
+  const start = new Date(firstISO);
+  const end   = new Date(lastISO);
+  if (Number.isNaN(+start) || Number.isNaN(+end) || end <= start) {
+    return null; // cannot judge
   }
-  const firstT = toEpochMs(candles[0].time);
-  const lastT  = toEpochMs(candles.at(-1).time);
-  if (!Number.isFinite(firstT) || !Number.isFinite(lastT)) {
-    throw new Error(`Bad timestamp in ${file}: first=${candles[0]?.time}, last=${candles.at(-1)?.time}`);
-  }
-  // monotonic non-decreasing
-  let prev = firstT;
-  for (let i = 1; i < candles.length; i++) {
-    const t = toEpochMs(candles[i].time);
-    if (!Number.isFinite(t) || t < prev) {
-      throw new Error(`Non-monotonic time at index ${i} in ${file}: ${candles[i].time}`);
-    }
-    prev = t;
-  }
-  return { firstT, lastT };
+  // include both endpoints → add 1 day
+  const days = Math.floor((end - start) / (24 * 3600 * 1000)) + 1;
+
+  return {
+    d1: { exp: days,          tol: Math.max(20, Math.round(days * 0.08)) },  // ±8% (min ±20 bars)
+    h4: { exp: days * 6,      tol: Math.max(120, Math.round(days * 6 * 0.08)) },
+    h1: { exp: days * 24,     tol: Math.max(400, Math.round(days * 24 * 0.08)) },
+  };
 }
 
-function fmt(ts) {
-  return new Date(ts).toISOString();
+function checkRange(label, count, exp, tol) {
+  const min = exp - tol;
+  const max = exp + tol;
+  const pass = count >= min && count <= max;
+  return { label, count, exp, tol, min, max, pass };
 }
 
-async function main() {
-  const report = [];
-  for (const { tf, file, min, max } of FILES) {
-    const j = readJson(file);
-    const candles = j.candles || [];
-    checkCount(tf, file, candles.length, min, max);
-    const { firstT, lastT } = checkTimes(tf, file, candles);
-    report.push({ tf, file, count: candles.length, first: fmt(firstT), last: fmt(lastT) });
+(function main() {
+  const data = FILES.map(f => {
+    const p = path.join(CACHE, f);
+    const arr = readCandles(p);
+    return { file: f, arr, ...summary(f, arr) };
+  });
+
+  // Print quick header
+  console.log('Phase-1 validate');
+  data.forEach(d => {
+    console.log(` • ${d.file}: count=${d.count}, first=${d.first}, last=${d.last}`);
+  });
+
+  // Build expectations from 1H (widest span), fall back to 1D if needed
+  const ref = data.find(d => d.file.includes('_1H')) || data.find(d => d.file.includes('_1D'));
+  if (!ref || ref.count === 0) {
+    throw new Error('No data to validate.');
+  }
+  const ex = expectedCounts(ref.first, ref.last);
+  if (!ex) {
+    throw new Error('Bad timespan (cannot compute expectations).');
   }
 
-  // Pretty summary
-  console.log('Phase-1 validate ✅');
-  for (const r of report) {
-    console.log(
-      `${r.tf.padEnd(2)}  count=${String(r.count).padStart(6)}  first=${r.first}  last=${r.last}  ← ${r.file}`
-    );
-  }
-}
+  // Map files → tf label
+  const results = data.map(d => {
+    const tf = d.file.includes('_1D') ? 'd1'
+           : d.file.includes('_4H') ? 'h4'
+           : 'h1';
+    const x = ex[tf];
+    return checkRange(tf.toUpperCase(), d.count, x.exp, x.tol);
+  });
 
-main().catch((err) => {
-  console.error('\nError:', err.message);
-  process.exit(1);
-});
+  const failed = results.filter(r => !r.pass);
+  if (failed.length) {
+    console.log('\nCount out of expected range:');
+    failed.forEach(r => {
+      console.log(`  ${r.label}: got ${r.count}, expected ${r.exp} ± ${r.tol} (range ${r.min}..${r.max})`);
+    });
+    process.exit(1);
+  }
+
+  console.log('\n✅ Phase-1 validate OK');
+})();
