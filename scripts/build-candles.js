@@ -2,29 +2,23 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import '../src/utils/env.js';
 
-import '../src/utils/env.js'; // load .env first
 import { aggregateDukascopy } from '../src/data/vendors/dukascopy-aggregate.js';
 import { ema, rsi, atr, adx } from '../src/indicators/ta.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-// repo root (…/forex-sensei-bot-v2)
 const ROOT = path.resolve(__dirname, '..');
 
-// canonical folders (absolute)
 const RAW_BASE = path.join(ROOT, 'data', 'raw', 'duka');
 const CANDLES_DIR = path.join(ROOT, 'data', 'candles', 'duka');
 const CACHE_DIR = path.join(ROOT, 'cache', 'json');
-
-// input symbol folder (we download under data/raw/duka/EURUSD/…)
 const SYMBOL_ENV = (process.env.INSTRUMENT || 'EURUSD').toUpperCase();
 
 function ensureDir(p) {
   if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
 }
-
 function isFiniteOHLC(c) {
   return (
     c &&
@@ -32,41 +26,32 @@ function isFiniteOHLC(c) {
     Number.isFinite(+c.high) &&
     Number.isFinite(+c.low) &&
     Number.isFinite(+c.close) &&
-    // time may be epoch-ms (number) or ISO (string that Date can parse)
     !Number.isNaN(new Date(c.time).getTime())
   );
 }
-
 function sanitize(series) {
-  // normalize time to ISO, sort, dedupe
-  const iso = series.map((c) => ({
-    ...c,
-    time: new Date(c.time).toISOString(),
-  }));
+  const iso = series.map((c) => ({ ...c, time: new Date(c.time).toISOString() }));
   const clean = iso.filter(isFiniteOHLC).sort((a, b) => new Date(a.time) - new Date(b.time));
-  const dedup = [];
-  let lastT = null;
+  const out = [];
+  let last = null;
   for (const c of clean) {
     const t = +new Date(c.time);
-    if (t !== lastT) {
-      dedup.push(c);
-      lastT = t;
+    if (t !== last) {
+      out.push(c);
+      last = t;
     }
   }
-  return dedup;
+  return out;
 }
-
 function addIndicators(candles) {
   const closes = candles.map((c) => c.close);
   const highs = candles.map((c) => c.high);
   const lows = candles.map((c) => c.low);
-
   const ema20 = ema(closes, 20);
   const ema50 = ema(closes, 50);
   const rsi14 = rsi(closes, 14);
   const atr14 = atr(highs, lows, closes, 14);
   const adx14 = adx(highs, lows, closes, 14);
-
   return candles.map((c, i) => ({
     ...c,
     ema20: ema20[i] ?? null,
@@ -76,7 +61,6 @@ function addIndicators(candles) {
     adx14: adx14[i] ?? null,
   }));
 }
-
 function writeJSON(file, obj) {
   ensureDir(path.dirname(file));
   fs.writeFileSync(file, JSON.stringify(obj));
@@ -85,8 +69,8 @@ function writeJSON(file, obj) {
 
 async function main() {
   const rawDir = path.join(RAW_BASE, SYMBOL_ENV);
+  console.log('[build] rawDir =', rawDir);
 
-  // guard + visibility
   if (!fs.existsSync(rawDir)) {
     console.error('[build] ERROR: raw dir not found ->', rawDir);
     process.exit(1);
@@ -96,7 +80,7 @@ async function main() {
   ensureDir(CACHE_DIR);
 
   console.log(`[build] vendor=DUKA symbol=${SYMBOL_ENV} -> aggregate to 1H/4H/1D JSON ...`);
-  const agg = await aggregateDukascopy(rawDir); // returns {h1,h4,d1} (epoch-ms times)
+  const agg = await aggregateDukascopy(rawDir);
 
   const h1 = addIndicators(sanitize(agg.h1));
   const h4 = addIndicators(sanitize(agg.h4));
@@ -104,19 +88,15 @@ async function main() {
 
   console.log(`[build] counts: 1D=${d1.length}, 4H=${h4.length}, 1H=${h1.length}`);
 
-  // Write vendor folder
   writeJSON(path.join(CANDLES_DIR, 'EUR-USD_1H.json'), { symbol: 'EUR-USD', timeframe: '1H', candles: h1 });
   writeJSON(path.join(CANDLES_DIR, 'EUR-USD_4H.json'), { symbol: 'EUR-USD', timeframe: '4H', candles: h4 });
   writeJSON(path.join(CANDLES_DIR, 'EUR-USD_1D.json'), { symbol: 'EUR-USD', timeframe: '1D', candles: d1 });
-
-  // Mirror to cache/json for existing app shape
   writeJSON(path.join(CACHE_DIR, 'EUR-USD_1H.json'), { symbol: 'EUR-USD', timeframe: '1H', candles: h1 });
   writeJSON(path.join(CACHE_DIR, 'EUR-USD_4H.json'), { symbol: 'EUR-USD', timeframe: '4H', candles: h4 });
   writeJSON(path.join(CACHE_DIR, 'EUR-USD_1D.json'), { symbol: 'EUR-USD', timeframe: '1D', candles: d1 });
 
   console.log('[build] done: wrote to both data/candles/duka and cache/json');
 }
-
 main().catch((e) => {
   console.error('[build] FATAL', e);
   process.exit(1);
