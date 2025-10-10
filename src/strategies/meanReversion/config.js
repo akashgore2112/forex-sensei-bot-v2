@@ -7,7 +7,7 @@ export const MR_CONFIG = {
   minTouches: 1,       // 2 -> 1  (open up)
 
   // --- Confirmation (softer; keep quality but not too strict) ---
-  useConfirmation: true,
+  useConfirmation: false,
   requireTouch: false,  // was true; wick must not "must-touch" exact level now
   minRejectionBps: 1.2, // 2 -> 1.2
   maxBodyFrac: 0.75,    // 0.6 -> 0.75
