@@ -2,93 +2,96 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import '../src/utils/env.js';
+import '../src/utils/env.js'; // load .env if present
 
-const INSTR = (process.env.INSTRUMENT || 'EURUSD').toLowerCase();
+// ---- Env & defaults
+const INSTR = (process.env.INSTRUMENT || 'EURUSD').toLowerCase(); // dukascopy style expects lower for CLI
 const FROM_M = process.env.DUKA_FROM_MONTH || '2023-01';
 const TO_M   = process.env.DUKA_TO_MONTH   || '2025-12';
 const TF     = process.env.DUKA_TIMEFRAME  || 'm1';
+const PRICE_FMT = 'csv';
 
+// Output base per symbol (UPPER for folder name)
 const ROOT = process.cwd();
-const OUT_BASE = path.join(ROOT, 'data', 'raw', 'duka', 'EURUSD');
+const OUT_BASE = path.join(ROOT, 'data', 'raw', 'duka', INSTR.toUpperCase());
 
-function ensureDir(p) { fs.mkdirSync(p, { recursive: true }); }
+function ensureDir(p) {
+  fs.mkdirSync(p, { recursive: true });
+}
 
-function* monthsRange(fromYyyyMm, toYyyyMm) {
-  let [y, m] = fromYyyyMm.split('-').map(Number);
-  const [ty, tm] = toYyyyMm.split('-').map(Number);
+function* monthRangeInclusive(fromYYYYMM, toYYYYMM) {
+  const [fy, fm] = fromYYYYMM.split('-').map(Number);
+  const [ty, tm] = toYYYYMM.split('-').map(Number);
+  let y = fy, m = fm;
+  // yield until we pass end
   while (y < ty || (y === ty && m <= tm)) {
     yield `${y}-${String(m).padStart(2, '0')}`;
-    m++; if (m > 12) { m = 1; y++; }
+    m += 1;
+    if (m > 12) { m = 1; y += 1; }
   }
 }
 
-function run(cmd, args, opts = {}) {
-  return execFileSync(cmd, args, { stdio: 'inherit', ...opts });
+function monthBounds(ym) {
+  // yyyy-mm to first/last day
+  const [y, m] = ym.split('-').map(Number);
+  const from = new Date(Date.UTC(y, m - 1, 1, 0, 0, 0, 0)).toISOString();
+  const to   = new Date(Date.UTC(y, m, 0, 23, 59, 59, 0)).toISOString(); // last day 23:59:59Z
+  return { from, to };
 }
 
-function guessMonthFilename(month) {
-  // what both CLIs typically generate
-  return `${INSTR}-m1-bid-${month}-01-${month}-${new Date(`${month}-01`).toISOString().slice(0,7)}-${new Date(new Date(`${month}-01`).getFullYear(), new Date(`${month}-01`).getMonth()+1, 0).getDate()}.csv`
-    .replace(/-\d{4}-\d{2}-/, '-'); // normalize mid part; we’ll glob anyway
+function runNpx(args, opts = {}) {
+  return execFileSync('npx', args, { stdio: 'inherit', ...opts });
 }
 
-function moveIfDroppedInCwd(outDir, month) {
-  // If CLI ignored --directory and dropped the file in CWD, move it.
-  const prefix = `${INSTR}-m1-bid-${month}-`;
-  const candidates = fs.readdirSync(process.cwd()).filter(f => f.startsWith(prefix) && f.endsWith('.csv'));
-  for (const f of candidates) {
-    const src = path.join(process.cwd(), f);
-    const dst = path.join(outDir, f);
-    if (!fs.existsSync(dst)) {
-      try { fs.renameSync(src, dst); } catch { /* ignore */ }
-    }
-  }
-}
+(async function main() {
+  console.log(`Downloading ${INSTR} ${TF} ${FROM_M}..${TO_M} → ${OUT_BASE}`);
+  ensureDir(OUT_BASE);
 
-async function main() {
-  console.log(`Symbol: ${INSTR}, tf: ${TF}, months: ${FROM_M}..${TO_M}`);
-  for (const month of monthsRange(FROM_M, TO_M)) {
-    const outDir = path.join(OUT_BASE, month);
+  for (const ym of monthRangeInclusive(FROM_M, TO_M)) {
+    const { from, to } = monthBounds(ym);
+    const outDir = path.join(OUT_BASE, ym);
     ensureDir(outDir);
 
-    const from = `${month}-01`;
-    // to = last day of month
-    const dt = new Date(`${month}-01T00:00:00Z`);
-    const last = new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth()+1, 0));
-    const to = `${last.toISOString().slice(0,10)}`;
+    // Skip if monthly file already exists (dukascopy-node writes one CSV per request)
+    const monthCsv = path.join(outDir,
+      `${INSTR}-${TF}-bid-${ym}-01-${ym}-${String(new Date(to).getUTCDate()).padStart(2, '0')}.csv`);
+    // We cannot rely on exact filename shape; do a loose existence check:
+    const already = fs.readdirSync(outDir).some(f => f.endsWith('.csv'));
+    if (already) {
+      console.log(`↷ ${ym}: already has CSV → skip`);
+      continue;
+    }
 
-    console.log(`\n>> downloading ${INSTR} ${month} -> ${outDir}`);
+    console.log(`\n→ downloading ${INSTR} ${ym} into ${outDir}`);
     try {
-      // Primary: dukascopy-node CLI (NO --concurrency)
-      run('npx', [
+      // Primary: dukascopy-node
+      const args = [
         '--yes', 'dukascopy-node@latest',
         '--instrument', INSTR,
         '--timeframe', TF,
         '--date-from', from,
         '--date-to', to,
-        '--format', 'csv',
-        '--directory', outDir
-      ]);
+        '--format', PRICE_FMT,
+        '--directory', outDir,
+      ];
+      runNpx(args);
     } catch (e) {
-      console.log('dukascopy-node failed, trying dukascopy-cli …');
-      // Fallback: dukascopy-cli (same flags)
-      run('npx', [
+      console.log("dukascopy-node failed, trying dukascopy-cli …");
+      const alt = [
         '--yes', 'dukascopy-cli@latest',
         '--instrument', INSTR,
         '--timeframe', TF,
         '--date-from', from,
         '--date-to', to,
-        '--format', 'csv',
-        '--directory', outDir
-      ]);
-      moveIfDroppedInCwd(outDir, month);
+        '--format', PRICE_FMT,
+        '--directory', outDir,
+      ];
+      runNpx(alt);
     }
   }
-  console.log('\n✓ Duka download complete.');
-}
 
-main().catch((err) => {
-  console.error(err);
+  console.log('\n✓ Duka download complete.');
+})().catch((e) => {
+  console.error(e);
   process.exit(1);
 });
