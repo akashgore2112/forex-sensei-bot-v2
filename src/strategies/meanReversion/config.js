@@ -14,7 +14,7 @@ export const MR_CONFIG = {
   requireTouch: false,
   minRejectionBps: 10,       // 0.10% wick advantage
   maxBodyFrac: 0.75,         // body <= 75% of range
-  minWickFrac: 0.30,         // zone-side wick >= 30%
+  minWickFrac: 0.35,         // zone-side wick >= 30%
 
   // Volatility guard
   useVolGuard: true,
@@ -39,5 +39,5 @@ export const MR_CONFIG = {
   adxTrendMax: 28,
 
   // Backtest/engine control
-  timeoutBars: 96            // NEW: trade ko max 48 bars (≈2D) me close karao
+  timeoutBars: 60            // NEW: trade ko max 48 bars (≈2D) me close karao
 };
