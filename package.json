@@ -33,3 +33,7 @@
     "prettier": "^3.3.3"
   }
 }
+"scripts": {
+  "...": "...",
+  "bt:mr": "node scripts/backtest-mr.js --symbol=EUR-USD"
+}
