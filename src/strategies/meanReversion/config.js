@@ -39,5 +39,5 @@ export const MR_CONFIG = {
   adxTrendMax: 28,
 
   // Backtest/engine control
-  timeoutBars: 48            // NEW: trade ko max 48 bars (≈2D) me close karao
+  timeoutBars: 96            // NEW: trade ko max 48 bars (≈2D) me close karao
 };
