@@ -52,7 +52,7 @@ export function backtestMR(h1, signals, { maxBars = 200 } = {}) {
     trades.push({
       time: sig.time, direction: sig.direction, entry: sig.entry,
       sl: sig.sl, tp: sig.tp, exit, outcome, R,
-      holdBars: exitIdx - startIdx + 1,
+      holdBars: Math.max(1, exitIdx - startIdx + 1),
     });
 
     // one-at-a-time: move pointer so overlap na ho
