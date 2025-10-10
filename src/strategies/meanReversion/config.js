@@ -1,10 +1,11 @@
 // src/strategies/meanReversion/config.js
 export const MR_CONFIG = {
   // Core MR thresholds (balanced)
+  useZoneTrend: false,        // ⬅️ turn OFF the zone trend gate
   rsiLow: 34,
   rsiHigh: 66,
   adxMax: 25,
-  levelTolBps: 22,          // zone se ~0.22% tak “near”
+  levelTolBps: 28,          // zone se ~0.22% tak “near”
 
   // Zone quality (retest entry model me touches ko zyada tight na rakho)
   minTouches: 1,
@@ -22,9 +23,9 @@ export const MR_CONFIG = {
   maxAtrMultiple: 2.2,       // thoda tighter vs earlier 2.4
 
   // Retest entry (NEW core)
-  retestBars: 24,            // “C-set”: retest window ≈ 1 day (H1 data)
-  retestTolBps: 14,          // zone proximity test
-  confirmCloseAwayBps: 6,    // NEW: retest ke baad close zone se itna “door” hona chahiye
+  retestBars: 6,            // “C-set”: retest window ≈ 1 day (H1 data)
+  retestTolBps: 18,          // zone proximity test
+  confirmCloseAwayBps: 4,    // NEW: retest ke baad close zone se itna “door” hona chahiye
 
   // Risk model
   atrSL: 2.4,
