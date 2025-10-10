@@ -1,8 +1,9 @@
-export const MR_CONFIG = {
-  rsiLow: 25,
-  rsiHigh: 75,
-  adxMax: 20,
-  levelTolBps: 15,   // 0.15% distance to zone
-  atrSL: 1.5,        // SL = 1.5 * ATR(14)
-  rr: 1.5,           // TP = SL * rr
-};
+ export const MR_CONFIG = {
+ rsiLow: 20,
+ rsiHigh: 80,
+ adxMax: 18,
+ levelTolBps: 12,
+   atrSL: 1.5,
+   rr: 1.5,
+ minTouches: 2
+ };
