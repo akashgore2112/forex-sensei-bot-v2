@@ -15,6 +15,24 @@ function advanceZoneIndex(tl, tISO, idx) {
   while (idx + 1 < n && tl[idx + 1].time <= tISO) idx++;
   return idx;
 }
+function mean(arr) { return arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : 0; }
+
+function pinRejectHigh(c, cfg) {
+  const range = c.high - c.low;
+  if (range <= 0) return false;
+  const body = Math.abs(c.close - c.open);
+  const upperWick = c.high - Math.max(c.open, c.close);
+  return (body <= cfg.maxBodyFrac * range) &&
+         (upperWick >= cfg.minWickFrac * range);
+}
+function pinRejectLow(c, cfg) {
+  const range = c.high - c.low;
+  if (range <= 0) return false;
+  const body = Math.abs(c.close - c.open);
+  const lowerWick = Math.min(c.open, c.close) - c.low;
+  return (body <= cfg.maxBodyFrac * range) &&
+         (lowerWick >= cfg.minWickFrac * range);
+}
 
 export function detectMR({ h1, zonesTimeline, cfg = MR_CONFIG, ignoreTrend = false }) {
   const out = [];
@@ -24,13 +42,19 @@ export function detectMR({ h1, zonesTimeline, cfg = MR_CONFIG, ignoreTrend = fal
 
   for (let i = 50; i < h1.length; i++) {
     const c = h1[i];
-    const { time, high, low, close, rsi14, adx14, atr14 } = c;
+    const { time, high, low, close, open, rsi14, adx14, atr14 } = c;
     if (rsi14 == null || adx14 == null || atr14 == null) continue;
+
+    // Volatility guard
+    if (cfg.useVolGuard && i >= cfg.atrLookback) {
+      const avgATR = mean(h1.slice(i - cfg.atrLookback, i).map(x => x.atr14 || 0));
+      if (avgATR && atr14 > cfg.maxAtrMultiple * avgATR) continue;
+    }
 
     zIdx = advanceZoneIndex(zonesTimeline, time, zIdx);
     const Z = zonesTimeline[zIdx];
     if (!Z) continue;
-    if (!ignoreTrend && !Z.trendOk) continue;  // trend guard can be bypassed
+    if (!ignoreTrend && !Z.trendOk) continue;
 
     const nh = nearest(Z.highs, close);
     const nl = nearest(Z.lows, close);
@@ -41,11 +65,16 @@ export function detectMR({ h1, zonesTimeline, cfg = MR_CONFIG, ignoreTrend = fal
       rsi14 >= cfg.rsiHigh && adx14 < cfg.adxMax &&
       (i - lastSellIdx) >= cfg.cooldownBars &&
       (!cfg.requireTouch || high >= nh.z.price) &&
-      (!cfg.useConfirmation || (high >= nh.z.price && close < nh.z.price && bps(high, close) >= cfg.minRejectionBps))
+      (!cfg.useConfirmation || (
+        high >= nh.z.price && close < nh.z.price &&
+        bps(high, close) >= cfg.minRejectionBps &&
+        pinRejectHigh(c, cfg)
+      ))
     ) {
       const sl = nh.z.price + cfg.atrSL * atr14;
       const entry = close; const tp = entry - cfg.rr * (sl - entry);
-      out.push({ time, direction:'SELL', entry,
+      out.push({
+        time, direction:'SELL', entry,
         sl:Number(sl.toFixed(5)), tp:Number(tp.toFixed(5)),
         ctx:{ rsi:rsi14, adx:adx14, distBps:Number(nh.d.toFixed(2)), zone:Number(nh.z.price.toFixed(5)), touches:nh.z.touches }
       });
@@ -58,11 +87,16 @@ export function detectMR({ h1, zonesTimeline, cfg = MR_CONFIG, ignoreTrend = fal
       rsi14 <= cfg.rsiLow && adx14 < cfg.adxMax &&
       (i - lastBuyIdx) >= cfg.cooldownBars &&
       (!cfg.requireTouch || low <= nl.z.price) &&
-      (!cfg.useConfirmation || (low <= nl.z.price && close > nl.z.price && bps(close, low) >= cfg.minRejectionBps))
+      (!cfg.useConfirmation || (
+        low <= nl.z.price && close > nl.z.price &&
+        bps(close, low) >= cfg.minRejectionBps &&
+        pinRejectLow(c, cfg)
+      ))
     ) {
       const sl = nl.z.price - cfg.atrSL * atr14;
       const entry = close; const tp = entry + cfg.rr * (entry - sl);
-      out.push({ time, direction:'BUY', entry,
+      out.push({
+        time, direction:'BUY', entry,
         sl:Number(sl.toFixed(5)), tp:Number(tp.toFixed(5)),
         ctx:{ rsi:rsi14, adx:adx14, distBps:Number(nl.d.toFixed(2)), zone:Number(nl.z.price.toFixed(5)), touches:nl.z.touches }
       });
