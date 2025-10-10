@@ -2,39 +2,65 @@
 import fs from 'fs';
 import path from 'path';
 
+/** Safe helpers */
+function safeReaddir(dir) {
+  try {
+    return fs.readdirSync(dir, { withFileTypes: true });
+  } catch (e) {
+    return [];
+  }
+}
+function isCsv(name) {
+  return typeof name === 'string' && name.toLowerCase().endsWith('.csv');
+}
+
 /**
- * Recursively collect all *.csv files under `dir`.
+ * Recursively collect *.csv under dir, with debug prints so we can see what’s happening.
  */
 function collectCsvFiles(dir) {
   const out = [];
   const stack = [dir];
+
+  const top = safeReaddir(dir);
+  console.log(`[aggregate] top-level entries in ${dir}: ${top.length}`);
+  if (top.length) {
+    const sample = top.slice(0, 10).map((d) => (d.isDirectory() ? `[D] ${d.name}` : `[F] ${d.name}`));
+    console.log('[aggregate] sample:', sample.join(', '));
+  }
+
   while (stack.length) {
     const d = stack.pop();
-    for (const ent of fs.readdirSync(d, { withFileTypes: true })) {
-      if (ent.isDirectory()) stack.push(path.join(d, ent.name));
-      else if (ent.isFile() && ent.name.toLowerCase().endsWith('.csv')) {
-        out.push(path.join(d, ent.name));
+    for (const ent of safeReaddir(d)) {
+      const p = path.join(d, ent.name);
+      if (ent.isDirectory()) {
+        stack.push(p);
+      } else if (ent.isFile() && isCsv(ent.name)) {
+        out.push(p);
       }
     }
   }
-  return out.sort();
+
+  out.sort();
+  console.log(`[aggregate] collectCsvFiles -> ${out.length} csv file(s)`);
+  if (out.length) console.log('[aggregate] first 3:', out.slice(0, 3).map((p) => path.basename(p)).join(' | '));
+  return out;
 }
 
-/**
- * Very tolerant CSV reader: handles ',' or ';' as separators, with/without header.
- * Expected columns: time, open, high, low, close (Dukascopy m1 csv uses bid series).
- */
+/** tolerant CSV parse (comma/semicolon, header/no-header) */
 function parseCsvLine(line, sep) {
   const parts = line.split(sep);
-  // dukascopy-node creates: timestamp, open, high, low, close  (no header)
-  // We accept 5 numeric columns; timestamp can be ISO or epoch.
   if (parts.length < 5) return null;
+
   const [tRaw, o, h, l, c] = parts.slice(0, 5).map((s) => s.trim());
-  const t = new Date(tRaw).getTime();
+  // Dukascopy monthly CSVs from dukascopy-node normally have ISO timestamps (Z) or epoch ms
+  const t =
+    /^\d+$/.test(tRaw) ? Number(tRaw) : Number.isFinite(Date.parse(tRaw)) ? Date.parse(tRaw) : NaN;
+
   const open = Number(o);
   const high = Number(h);
   const low = Number(l);
   const close = Number(c);
+
   if (!Number.isFinite(t) || !Number.isFinite(open) || !Number.isFinite(high) || !Number.isFinite(low) || !Number.isFinite(close)) {
     return null;
   }
@@ -42,17 +68,24 @@ function parseCsvLine(line, sep) {
 }
 
 function readCsvFile(file) {
-  const raw = fs.readFileSync(file, 'utf8').trim();
+  let raw = '';
+  try {
+    raw = fs.readFileSync(file, 'utf8');
+  } catch (_) {
+    return [];
+  }
+  raw = raw.trim();
   if (!raw) return [];
 
-  // detect separator
-  const firstLine = raw.slice(0, raw.indexOf('\n') + 1);
-  const sep = (firstLine.includes(';') && !firstLine.includes(',')) ? ';' : ',';
+  // detect separator using first line
+  const nl = raw.indexOf('\n');
+  const head = nl === -1 ? raw : raw.slice(0, nl + 1);
+  const sep = head.includes(';') && !head.includes(',') ? ';' : ',';
 
   const lines = raw.split(/\r?\n/).filter(Boolean);
 
-  // skip header if present
-  const startIdx = /^\D/i.test(lines[0][0]) || lines[0].toLowerCase().includes('timestamp') ? 1 : 0;
+  // header detection: treat a line as header if it has any letters
+  const startIdx = /[A-Za-z]/.test(lines[0]) ? 1 : 0;
 
   const rows = [];
   for (let i = startIdx; i < lines.length; i++) {
@@ -62,29 +95,32 @@ function readCsvFile(file) {
   return rows;
 }
 
-/**
- * Aggregate minute bars into 1H / 4H / 1D.
- */
+/** aggregate minute -> 1H/4H/1D (UTC) */
 function bucketize(rows) {
-  const h1 = new Map(); // key: UTC hour start epoch-ms
-  const h4 = new Map(); // 0,4,8,12,16,20
-  const d1 = new Map(); // 00:00 UTC
+  const h1 = new Map();
+  const h4 = new Map();
+  const d1 = new Map();
 
-  function upd(m, t, price) {
+  const upd = (m, t, px) => {
     const ex = m.get(t);
-    if (!ex) m.set(t, { time: t, open: price, high: price, low: price, close: price });
+    if (!ex) m.set(t, { time: t, open: px, high: px, low: px, close: px });
     else {
-      ex.high = Math.max(ex.high, price);
-      ex.low = Math.min(ex.low, price);
-      ex.close = price;
+      if (px > ex.high) ex.high = px;
+      if (px < ex.low) ex.low = px;
+      ex.close = px;
     }
-  }
+  };
 
   for (const r of rows) {
     const dt = new Date(r.time);
     const H = Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate(), dt.getUTCHours());
+    const H4 = Date.UTC(
+      dt.getUTCFullYear(),
+      dt.getUTCMonth(),
+      dt.getUTCDate(),
+      Math.floor(dt.getUTCHours() / 4) * 4
+    );
     const D = Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate());
-    const H4 = Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate(), Math.floor(dt.getUTCHours() / 4) * 4);
 
     upd(h1, H, r.close);
     upd(h4, H4, r.close);
@@ -96,15 +132,16 @@ function bucketize(rows) {
 }
 
 /**
- * Main aggregator API.
+ * Public API
  * @param {string} rawDir absolute path like …/data/raw/duka/EURUSD
- * @returns {{h1:Array, h4:Array, d1:Array}}
  */
 export async function aggregateDukascopy(rawDir) {
   const files = collectCsvFiles(rawDir);
-  console.log(`[aggregate] scanning ${files.length} monthly CSV file(s) under ${rawDir}`);
 
-  if (files.length === 0) return { h1: [], h4: [], d1: [] };
+  if (files.length === 0) {
+    console.warn('[aggregate] WARNING: no CSV files found. Check download location and symbol casing.');
+    return { h1: [], h4: [], d1: [] };
+  }
 
   let rows = [];
   for (const f of files) {
