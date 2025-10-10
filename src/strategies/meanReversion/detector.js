@@ -16,7 +16,7 @@ function advanceZoneIndex(tl, tISO, idx) {
   return idx;
 }
 
-export function detectMR({ h1, zonesTimeline, cfg = MR_CONFIG }) {
+export function detectMR({ h1, zonesTimeline, cfg = MR_CONFIG, ignoreTrend = false }) {
   const out = [];
   if (!Array.isArray(h1) || !Array.isArray(zonesTimeline) || zonesTimeline.length === 0) return out;
 
@@ -29,7 +29,8 @@ export function detectMR({ h1, zonesTimeline, cfg = MR_CONFIG }) {
 
     zIdx = advanceZoneIndex(zonesTimeline, time, zIdx);
     const Z = zonesTimeline[zIdx];
-    if (!Z || !Z.trendOk) continue;  // <<< trend guard
+    if (!Z) continue;
+    if (!ignoreTrend && !Z.trendOk) continue;  // trend guard can be bypassed
 
     const nh = nearest(Z.highs, close);
     const nl = nearest(Z.lows, close);
