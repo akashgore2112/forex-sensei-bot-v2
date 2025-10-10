@@ -2,11 +2,11 @@ export const MR_CONFIG = {
   // Core MR thresholds
   rsiLow: 30,
   rsiHigh: 70,
-  adxMax: 25,
-  levelTolBps: 22,     // distance from zone to consider "near" (0.22%)
+  adxMax: 23,
+  levelTolBps: 20,     // distance from zone to consider "near" (0.22%)
 
   // Zone quality
-  minTouches: 1,       // open a bit; retest-entry itself is quality
+  minTouches: 2,       // open a bit; retest-entry itself is quality
 
   // Confirmation (still useful, but retest does the heavy lifting)
   useConfirmation: true,
@@ -21,17 +21,17 @@ export const MR_CONFIG = {
   maxAtrMultiple: 2.4,
 
   // NEW — Retest entry
-  retestBars: 3,        // pinbar ke baad max kitne bars tak retest consider
-  retestTolBps: 12,     // zone ke itne bps ke andar wick/close aaye to enter
+  retestBars: 2,        // pinbar ke baad max kitne bars tak retest consider
+  retestTolBps: 10,     // zone ke itne bps ke andar wick/close aaye to enter
 
   // Risk model
-  atrSL: 1.8,
-  rr: 1.3,
+  atrSL: 2.0,
+  rr: 1.2,
 
   // Debounce
   cooldownBars: 6,
 
   // Trend guard (relaxed)
-  slopeBpsMax: 25,
-  adxTrendMax: 28,
+  slopeBpsMax: 22,
+  adxTrendMax: 26,
 };
