@@ -1,44 +1,43 @@
 // src/strategies/meanReversion/config.js
-
 export const MR_CONFIG = {
-  // ---- Core MR thresholds (oscillator + regime) ----
-  rsiLow: 30,
-  rsiHigh: 70,
+  // Core MR thresholds (balanced)
+  rsiLow: 34,
+  rsiHigh: 66,
+  adxMax: 25,
+  levelTolBps: 22,          // zone se ~0.22% tak “near”
 
-  // Trend guard (thoda conservative to avoid chasing trends)
-  adxMax: 24,        // pehle 25/28 the; thoda tighten
-  adxTrendMax: 26,
-  slopeBpsMax: 22,
+  // Zone quality (retest entry model me touches ko zyada tight na rakho)
+  minTouches: 1,
 
-  // Price vs zone proximity
-  levelTolBps: 20,   // touch window tighter (Set B se tight)
-
-  // ---- Zone quality ----
-  minTouches: 2,     // 1 -> 2 (zone quality ↑)
-
-  // ---- Confirmation / rejection ----
+  // Candle confirmation (soft)
   useConfirmation: true,
-  requireTouch: false,       // exact pip touch not mandatory
-  minRejectionBps: 1.2,      // wick vs close min
-  maxBodyFrac: 0.75,         // body <= 75% range
-  minWickFrac: 0.30,         // zone-side wick >= 30% range
-  // optional: agar detector support karta ho:
-  // confirmCloseAwayBps: 6, // retest candle close zone se ≥6 bps doodh
+  requireTouch: false,
+  minRejectionBps: 10,       // 0.10% wick advantage
+  maxBodyFrac: 0.75,         // body <= 75% of range
+  minWickFrac: 0.30,         // zone-side wick >= 30%
 
-  // ---- Volatility guard ----
+  // Volatility guard
   useVolGuard: true,
   atrLookback: 20,
-  maxAtrMultiple: 2.4,
+  maxAtrMultiple: 2.2,       // thoda tighter vs earlier 2.4
 
-  // ---- Retest entry window ----
-  retestBars: 2,      // quick rejection chahiye
-  retestTolBps: 10,   // retest tolerance tighter
+  // Retest entry (NEW core)
+  retestBars: 24,            // “C-set”: retest window ≈ 1 day (H1 data)
+  retestTolBps: 14,          // zone proximity test
+  confirmCloseAwayBps: 6,    // NEW: retest ke baad close zone se itna “door” hona chahiye
 
-  // ---- Risk model / exits ----
-  atrSL: 2.2,         // SL wider to survive initial spike
-  rr: 1.1,            // TP closer so MR hit probability ↑
-  timeoutBars: 72,    // NEW: backtester yahi use karega (fallback 48)
+  // Risk model
+  atrSL: 1.8,
+  rr: 1.3,
+  slBufferBps: 3,            // small SL buffer to avoid micro-stop
 
-  // ---- Debounce ----
+  // Debounce
   cooldownBars: 6,
+
+  // Trend guard (relaxed)
+  slopeBpsMax: 25,
+  adxTrendMax: 28,
+
+  // Backtest/engine control
+  timeoutBars: 48            // NEW: trade ko max 48 bars (≈2D) me close karao
 };
