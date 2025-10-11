@@ -26,7 +26,7 @@ export const MR_CONFIG = {
   rr: 1.0,                 // simple R:R for robustness
 
   // --- Timeout ---
-  timeoutBars: 60,         // exit if neither SL/TP within 60 H bars
+  timeoutBars: 72,         // exit if neither SL/TP within 60 H bars
 
   // --- Cooldown / de-dup ---
   cooldownBars: 6,
