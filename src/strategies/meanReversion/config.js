@@ -4,7 +4,7 @@ export const MR_CONFIG = {
   rsiLow: 30,
   rsiHigh: 70,
   adxMax: 25,              // local noise guard
-  levelTolBps: 28,         // distance to zone to call "near" (0.26%)
+  levelTolBps: 24,         // distance to zone to call "near" (0.26%)
 
   // --- Zone quality (we let retest do the filtering) ---
   minTouches: 1,
@@ -17,9 +17,9 @@ export const MR_CONFIG = {
   minWickFrac: 0.30,       // zone-side wick >= 35% of range (tightened)
 
   // --- Retest entry (works well in your runs) ---
-  retestBars: 8,           // lookahead bars after pinbar
-  retestTolBps: 26,        // retest must come within 20 bps of zone
-  confirmCloseAwayBps: 2,  // close should step away by ≥3 bps post-retest
+  retestBars: 6,           // lookahead bars after pinbar
+  retestTolBps: 12,        // retest must come within 20 bps of zone
+  confirmCloseAwayBps: 5,  // close should step away by ≥3 bps post-retest
 
   // --- Risk model ---
   atrSL: 1.8,
@@ -35,6 +35,6 @@ export const MR_CONFIG = {
   useTrendGuard: false,    // <- primary switch used by scripts
   useZoneTrend: true,     // <- alias for clarity (not required by scripts)
   // If you ever enable it, these are the thresholds it would use:
-  slopeBpsMax: 22,
-  adxTrendMax: 24,
+  slopeBpsMax: 28,
+  adxTrendMax: 32,
 };
