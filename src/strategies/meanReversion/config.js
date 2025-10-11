@@ -17,8 +17,8 @@ export const MR_CONFIG = {
   minWickFrac: 0.35,       // zone-side wick >= 35% of range (tightened)
 
   // --- Retest entry (works well in your runs) ---
-  retestBars: 6,           // lookahead bars after pinbar
-  retestTolBps: 20,        // retest must come within 20 bps of zone
+  retestBars: 9,           // lookahead bars after pinbar
+  retestTolBps: 24,        // retest must come within 20 bps of zone
   confirmCloseAwayBps: 3,  // close should step away by ≥3 bps post-retest
 
   // --- Risk model ---
