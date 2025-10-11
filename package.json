@@ -16,6 +16,8 @@
     "data:duka:build": "node scripts/build-candles.js",
     "scan:mr": "node scripts/scan-mr.js --symbol=EUR-USD",
     "bt:mr": "node scripts/backtest-mr.js --symbol=EUR-USD"
+    "data:duka:batch": "node scripts/duka-batch.js",
+    "data:duka:batch:validate": "node scripts/duka-batch.js --validate"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx}": ["eslint --fix --max-warnings=0", "prettier --write"],
