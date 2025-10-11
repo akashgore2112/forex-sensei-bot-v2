@@ -35,6 +35,6 @@ export const MR_CONFIG = {
   useTrendGuard: false,    // <- primary switch used by scripts
   useZoneTrend: true,     // <- alias for clarity (not required by scripts)
   // If you ever enable it, these are the thresholds it would use:
-  slopeBpsMax: 25,
-  adxTrendMax: 28,
+  slopeBpsMax: 22,
+  adxTrendMax: 24,
 };
