@@ -4,29 +4,27 @@
   "private": true,
   "type": "module",
   "description": "Production-grade swing signal bot (Mean Reversion core, Momentum optional, AI validation gate).",
-  "engines": {
-    "node": ">=20"
-  },
+  "engines": { "node": ">=20" },
   "scripts": {
     "dev:run": "node scripts/hello.js",
     "dev:lint": "eslint .",
     "dev:fmt": "prettier .",
     "dev:test": "node -e \"console.log('no tests yet')\"",
     "prepare": "husky",
+
     "data:duka:test-oct23": "INSTRUMENT=EURUSD DUKA_FROM_MONTH=2023-10 DUKA_TO_MONTH=2023-10 node scripts/duka-download.js",
     "data:duka:download": "node scripts/duka-download.js",
     "data:duka:build": "node scripts/build-candles.js",
+
     "data:duka:batch": "node scripts/duka-batch.js",
-    "data:duka:batch:validate": "node scripts/duka-batch.js --validate"
+    "data:duka:batch:validate": "node scripts/duka-batch.js --validate",
+
+    "scan:mr": "node scripts/scan-mr.js --symbol=EUR-USD",
+    "bt:mr": "node scripts/backtest-mr.js --symbol=EUR-USD"
   },
   "lint-staged": {
-    "*.{js,jsx,ts,tsx}": [
-      "eslint --fix --max-warnings=0",
-      "prettier --write"
-    ],
-    "*.{json,md,yml,yaml}": [
-      "prettier --write"
-    ]
+    "*.{js,jsx,ts,tsx}": ["eslint --fix --max-warnings=0", "prettier --write"],
+    "*.{json,md,yml,yaml}": ["prettier --write"]
   },
   "dependencies": {
     "dukascopy-node": "^1.43.0",
@@ -37,7 +35,7 @@
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-import": "^2.29.1",
     "husky": "^9.0.11",
-    "lint-staged": "^16.2.3",
+    "lint-staged": "^15.2.2",
     "prettier": "^3.3.3"
   }
 }
