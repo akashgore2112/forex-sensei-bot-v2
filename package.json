@@ -21,6 +21,9 @@
 
     "scan:mr": "node scripts/scan-mr.js --symbol=EUR-USD",
     "bt:mr": "node scripts/backtest-mr.js --symbol=EUR-USD"
+    
+    "daily:scan": "node scripts/daily-scan.js",
+    "weekly:guard": "node scripts/weekly-guard.js"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx}": ["eslint --fix --max-warnings=0", "prettier --write"],
