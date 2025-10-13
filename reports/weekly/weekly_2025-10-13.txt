@@ -1,0 +1,8 @@
+WEEKLY GUARD (last 12 weeks) — 2025-10-13
+
+Week 2025-W42
+  EUR-USD: days=1, signals=0, S4_avg_winRate=n/a%
+  GBP-USD: days=1, signals=0, S4_avg_winRate=n/a%
+  USD-JPY --weeks=12: days=0, signals=0, S4_avg_winRate=n/a%
+
+Guard: BORDERLINE — No signals for USD-JPY --weeks=12 in 2025-W42
