@@ -1,0 +1,11 @@
+MR Backtest GBP-USD 2023-01-01..2025-10-08 (timeout=72 bars, trend=OFF)
+signals=21, trades=21
+wins=15, losses=6, winRate=71.4%
+avgR=0.38, expectancy(R)=0.38, avgHoldHrs=211.0
+
+Last 5 trades:
+2024-11-08T17:00:00.000Z BUY entry=1.28967 exit=1.29147 outcome=TIMEOUT R=0.40 bars=48
+2024-12-05T17:00:00.000Z SELL entry=1.27461 exit=1.27754 outcome=SL R=-1.00 bars=19
+2025-04-01T00:00:00.000Z BUY entry=1.29259 exit=1.29383 outcome=TP R=1.00 bars=4
+2025-08-29T11:00:00.000Z BUY entry=1.34528 exit=1.34737 outcome=TP R=1.00 bars=3
+2025-09-07T22:00:00.000Z BUY entry=1.34863 exit=1.34913 outcome=TP R=1.00 bars=1

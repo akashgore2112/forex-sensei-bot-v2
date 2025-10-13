@@ -1,0 +1,11 @@
+MR Backtest EUR-USD 2023-01-01..2025-10-08 (timeout=72 bars, trend=OFF)
+signals=20, trades=20
+wins=11, losses=9, winRate=55.0%
+avgR=0.00, expectancy(R)=0.00, avgHoldHrs=275.0
+
+Last 5 trades:
+2025-01-06T05:00:00.000Z SELL entry=1.03088 exit=1.03163 outcome=SL R=-1.00 bars=2
+2025-07-07T00:00:00.000Z SELL entry=1.17799 exit=1.17687 outcome=TP R=1.00 bars=2
+2025-07-07T00:00:00.000Z SELL entry=1.17799 exit=1.17687 outcome=TP R=1.00 bars=2
+2025-09-15T10:00:00.000Z SELL entry=1.17528 exit=1.17701 outcome=SL R=-1.00 bars=2
+2025-10-02T16:00:00.000Z BUY entry=1.17148 exit=1.17458 outcome=TP R=1.00 bars=22
