@@ -1,203 +1,119 @@
-// ESM: works with "type": "module"
-import { promises as fs } from "fs";
+// scripts/weekly_guard.js
+// ESM-compatible weekly guard that reads the latest daily signals JSON
+// and checks if there has been at least one signal within N weeks.
+
+import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
-// ---------- CLI args ----------
-const argv = process.argv.slice(2).join(" ");
-const symMatch = /--symbols="?([^"\n]+)"?/i.exec(argv);
-const weeksMatch = /--weeks=(\d+)/i.exec(argv);
-
-const SYMBOLS = (symMatch ? symMatch[1] : "EUR-USD,GBP-USD,USD-JPY")
-  .split(",")
-  .map(s => s.trim())
-  .filter(Boolean);
-
-const WEEKS = weeksMatch ? Math.max(1, parseInt(weeksMatch[1], 10)) : 12;
-
-// ---------- Paths ----------
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const ROOT = path.resolve(__dirname, "..");
-const DAILY_DIR = path.join(ROOT, "reports", "daily");
-const WEEKLY_DIR = path.join(ROOT, "reports", "weekly");
 
-// ---------- Helpers ----------
-async function ensureDir(p) {
-  await fs.mkdir(p, { recursive: true }).catch(() => {});
-}
+// ---------- small utils ----------
+const arg = (name, def = null) => {
+  const m = process.argv.join(" ").match(new RegExp(`--${name}="?([^"\\s]+)"?`));
+  return m ? m[1] : def;
+};
 
-async function listDailyDates() {
-  let entries = [];
-  try {
-    entries = await fs.readdir(DAILY_DIR, { withFileTypes: true });
-  } catch (_e) {
-    return [];
+const ensureDir = (p) => fs.mkdirSync(p, { recursive: true });
+const exists = (p) => { try { fs.accessSync(p, fs.constants.F_OK); return true; } catch { return false; } };
+const readJSON = (p) => JSON.parse(fs.readFileSync(p, "utf8"));
+
+const iso = (d) => new Date(d).toISOString().slice(0, 10);
+const now = new Date();
+
+// ---------- config from CLI ----------
+const symbolsArg = arg("symbols", "EUR-USD,GBP-USD,USD-JPY");
+const SYMBOLS = symbolsArg.split(",").map(s => s.trim()).filter(Boolean);
+const WEEKS = parseInt(arg("weeks", "12"), 10);
+
+// ---------- locate latest daily folder ----------
+const dailyRoot = path.join(__dirname, "..", "reports", "daily");
+let lastDir = path.join(dailyRoot, "_last");
+if (!exists(lastDir)) {
+  // pick newest YYYY-MM-DD directory
+  const entries = exists(dailyRoot) ? fs.readdirSync(dailyRoot)
+    .filter(f => /^\d{4}-\d{2}-\d{2}$/.test(f))
+    .sort() : [];
+  if (entries.length === 0) {
+    console.error("[weekly_guard] ERROR: no daily reports found. Run daily-scan first.");
+    process.exit(1);
   }
-  return entries
-    .filter(d => d.isDirectory() && /^\d{4}-\d{2}-\d{2}$/.test(d.name))
-    .map(d => d.name)
-    .sort(); // oldest -> newest
+  lastDir = path.join(dailyRoot, entries[entries.length - 1]);
 }
 
-function weekKey(dateStr) {
-  // ISO-like week key: YYYY-Www (Monday-based)
-  const d = new Date(dateStr + "T00:00:00Z");
-  // Move to nearest Thursday to get week/year correctly
-  const target = new Date(d.valueOf());
-  const day = (d.getUTCDay() + 6) % 7; // Mon=0..Sun=6
-  target.setUTCDate(d.getUTCDate() - day + 3);
-  const firstThu = new Date(Date.UTC(target.getUTCFullYear(), 0, 4));
-  const diff = target - firstThu;
-  const week = 1 + Math.round(diff / (7 * 24 * 3600 * 1000));
-  const year = target.getUTCFullYear();
-  return `${year}-W${String(week).padStart(2, "0")}`;
-}
+const weeklyOutDir = path.join(__dirname, "..", "reports", "weekly");
+ensureDir(weeklyOutDir);
 
-async function readText(p) {
-  try {
-    return await fs.readFile(p, "utf8");
-  } catch {
-    return null;
-  }
-}
+const cutoffMs = now.getTime() - WEEKS * 7 * 24 * 3600 * 1000;
 
-async function readJson(p) {
-  try {
-    return JSON.parse(await fs.readFile(p, "utf8"));
-  } catch {
-    return null;
-  }
-}
+// Extract latest signal time from a signals JSON with flexible shapes
+function latestSignalMs(obj) {
+  // try common shapes we’ve used
+  const candidates = [];
 
-// Try to pull S4 (trend OFF) winRate from scan_<SYM>.txt
-function parseS4WinRateFromScan(scanTxt) {
-  if (!scanTxt) return null;
-  // Find the block that mentions "trend=OFF", then a line with winRate=XX.X%
-  // We scan from bottom to catch the last run.
-  const lines = scanTxt.split(/\r?\n/).reverse();
-  let inOffBlock = false;
-  for (const line of lines) {
-    if (/trend\s*=\s*OFF/i.test(line)) {
-      inOffBlock = true;
-      continue;
-    }
-    if (inOffBlock) {
-      const m = /winRate\s*=\s*([0-9.]+)%/i.exec(line);
-      if (m) return Number(m[1]);
-      // keep scanning a few more lines
-    }
-  }
-  return null;
-}
-
-// ---------- Main roll-up ----------
-async function main() {
-  await ensureDir(WEEKLY_DIR);
-
-  const allDates = await listDailyDates();
-  if (allDates.length === 0) {
-    console.log(`[weekly_guard] No daily reports found under ${DAILY_DIR}`);
-    process.exit(0);
+  // 1) lastSignals: [{entry: ISO}, ...]
+  if (Array.isArray(obj.lastSignals)) {
+    for (const s of obj.lastSignals) if (s.entry) candidates.push(new Date(s.entry).getTime());
   }
 
-  // Only last N weeks of dates
-  // Build map { weekKey: { symbol: { days, signals, s4WinRates[] } } }
-  const weeksMap = new Map();
+  // 2) signals: [{entry: ISO}] or events: [{entry: ISO}] fallback
+  if (Array.isArray(obj.signals)) {
+    for (const s of obj.signals) if (s.entry) candidates.push(new Date(s.entry).getTime());
+  }
+  if (Array.isArray(obj.events)) {
+    for (const e of obj.events) if (e.entry) candidates.push(new Date(e.entry).getTime());
+  }
 
-  for (const dateStr of allDates) {
-    const wk = weekKey(dateStr);
-    if (!weeksMap.has(wk)) weeksMap.set(wk, new Map());
+  // 3) summary.lastSignalTime or lastSignal (ISO)
+  if (obj?.summary?.lastSignalTime) candidates.push(new Date(obj.summary.lastSignalTime).getTime());
+  if (obj?.lastSignal) candidates.push(new Date(obj.lastSignal).getTime());
 
-    for (const sym of SYMBOLS) {
-      const scanPath = path.join(DAILY_DIR, dateStr, `scan_${sym}.txt`);
-      const sigPath = path.join(DAILY_DIR, dateStr, `signals_${sym}.json`);
+  // Return newest (max)
+  return candidates.length ? Math.max(...candidates) : null;
+}
 
-      const scanTxt = await readText(scanPath);
-      const sigJson = await readJson(sigPath);
+const reportTxt = [];
+const jsonOut = {
+  date: iso(now),
+  weeks: WEEKS,
+  symbols: {},
+};
 
-      if (!weeksMap.get(wk).has(sym)) {
-        weeksMap.get(wk).set(sym, { days: 0, signals: 0, s4Wins: [] });
+for (const sym of SYMBOLS) {
+  // files are like: signals_EUR-USD.json
+  const file = path.join(lastDir, `signals_${sym}.json`);
+  let status = "BORDERLINE";
+  let lastIso = null;
+
+  if (exists(file)) {
+    try {
+      const obj = readJSON(file);
+      const t = latestSignalMs(obj);
+      if (t) {
+        lastIso = new Date(t).toISOString();
+        if (t >= cutoffMs) status = "OK";
       }
-      const cell = weeksMap.get(wk).get(sym);
-
-      // count this day if we have either the scan or signals
-      if (scanTxt || sigJson) cell.days += 1;
-
-      if (Array.isArray(sigJson)) cell.signals += sigJson.length;
-
-      const wr = parseS4WinRateFromScan(scanTxt);
-      if (wr != null && !Number.isNaN(wr)) cell.s4Wins.push(wr);
+    } catch (e) {
+      status = "ERROR";
+      lastIso = `parse-failed: ${e.message}`;
     }
+  } else {
+    status = "MISSING";
   }
 
-  // Keep only last WEEKS entries
-  const wkKeys = Array.from(weeksMap.keys()).sort();
-  const lastKeys = wkKeys.slice(-WEEKS);
-
-  const summary = [];
-  for (const wk of lastKeys) {
-    const row = { week: wk, symbols: {} };
-    for (const sym of SYMBOLS) {
-      const cell = weeksMap.get(wk).get(sym) || { days: 0, signals: 0, s4Wins: [] };
-      const avgWR =
-        cell.s4Wins.length > 0
-          ? Number((cell.s4Wins.reduce((a, b) => a + b, 0) / cell.s4Wins.length).toFixed(1))
-          : null;
-      row.symbols[sym] = {
-        days: cell.days,
-        signals: cell.signals,
-        s4_avg_winRate: avgWR,
-      };
-    }
-    summary.push(row);
-  }
-
-  // Simple guard rule: last 4 weeks must have some signals AND avg S4 winRate >= 45%
-  const GUARD_WEEKS = Math.min(4, summary.length);
-  const GUARD_MIN_WIN = 45.0;
-
-  const guard = { ok: true, reason: "OK" };
-  for (let i = summary.length - GUARD_WEEKS; i < summary.length; i++) {
-    if (i < 0) continue;
-    const row = summary[i];
-    for (const sym of SYMBOLS) {
-      const { signals, s4_avg_winRate } = row.symbols[sym];
-      if (signals <= 0) {
-        guard.ok = false;
-        guard.reason = `No signals for ${sym} in ${row.week}`;
-      }
-      if (s4_avg_winRate != null && s4_avg_winRate < GUARD_MIN_WIN) {
-        guard.ok = false;
-        guard.reason = `Low S4 winRate for ${sym} in ${row.week} (${s4_avg_winRate}%)`;
-      }
-    }
-  }
-
-  // Write outputs
-  const now = new Date();
-  const stamp = now.toISOString().slice(0, 10);
-  const outJson = path.join(WEEKLY_DIR, `weekly_${stamp}.json`);
-  const outTxt = path.join(WEEKLY_DIR, `weekly_${stamp}.txt`);
-
-  await fs.writeFile(outJson, JSON.stringify({ symbols: SYMBOLS, weeks: WEEKS, summary, guard }, null, 2));
-  let txt = `WEEKLY GUARD (last ${WEEKS} weeks) — ${stamp}\n\n`;
-  for (const row of summary) {
-    txt += `Week ${row.week}\n`;
-    for (const sym of SYMBOLS) {
-      const c = row.symbols[sym];
-      txt += `  ${sym}: days=${c.days}, signals=${c.signals}, S4_avg_winRate=${c.s4_avg_winRate ?? "n/a"}%\n`;
-    }
-    txt += `\n`;
-  }
-  txt += `Guard: ${guard.ok ? "OK" : "BORDERLINE"} — ${guard.reason}\n`;
-  await fs.writeFile(outTxt, txt, "utf8");
-
-  console.log(`[weekly_guard] wrote:\n  ${path.relative(ROOT, outJson)}\n  ${path.relative(ROOT, outTxt)}`);
-  console.log(`[weekly_guard] Guard: ${guard.ok ? "OK" : "BORDERLINE"} — ${guard.reason}`);
+  jsonOut.symbols[sym] = { status, lastSignal: lastIso };
+  reportTxt.push(`${sym}: ${status}${lastIso ? ` — last=${lastIso}` : ""}`);
 }
 
-main().catch(err => {
-  console.error(err);
-  process.exit(1);
-});
+// write artifacts
+const fnBase = `weekly_${iso(now)}`;
+fs.writeFileSync(path.join(weeklyOutDir, `${fnBase}.json`), JSON.stringify(jsonOut, null, 2));
+fs.writeFileSync(path.join(weeklyOutDir, `${fnBase}.txt`), `${fnBase}\nweeks=${WEEKS}\n\n${reportTxt.join("\n")}\n`);
+
+console.log("[weekly_guard] wrote:");
+console.log(`  reports/weekly/${fnBase}.json`);
+console.log(`  reports/weekly/${fnBase}.txt`);
+for (const [sym, info] of Object.entries(jsonOut.symbols)) {
+  console.log(`[weekly_guard] ${sym}: ${info.status}${info.lastSignal ? ` — last=${info.lastSignal}` : ""}`);
+}
