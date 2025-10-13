@@ -1,0 +1,15 @@
+debug: zonesTimeline=2179, trendOk=1343 (61.6%)
+MR scan for EUR-USD 2024-09-08..2025-10-13
+  2024-10: total=1, BUY=1, SELL=0
+  2024-12: total=1, BUY=0, SELL=1
+  2025-01: total=1, BUY=0, SELL=1
+  2025-07: total=2, BUY=0, SELL=2
+  2025-09: total=1, BUY=0, SELL=1
+  2025-10: total=1, BUY=1, SELL=0
+
+Last 5 signals:
+2025-01-06T05:00:00.000Z SELL @1.03088 SL:1.03163 TP:1.03013 ctx:{"z":1.03098,"retest":true}
+2025-07-07T00:00:00.000Z SELL @1.17799 SL:1.17911 TP:1.17687 ctx:{"z":1.17868,"retest":true}
+2025-07-07T00:00:00.000Z SELL @1.17799 SL:1.17911 TP:1.17687 ctx:{"z":1.17868,"retest":true}
+2025-09-15T10:00:00.000Z SELL @1.17528 SL:1.17701 TP:1.17355 ctx:{"z":1.17587,"retest":true}
+2025-10-02T16:00:00.000Z BUY @1.17148 SL:1.16838 TP:1.17458 ctx:{"z":1.17086,"retest":true}

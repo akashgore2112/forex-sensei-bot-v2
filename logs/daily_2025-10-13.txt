@@ -1,0 +1,416 @@
+[daily-scan] 2025-10-13T18:20:42.887Z
+symbols=EUR-USD, GBP-USD, USD-JPY  window=2024-09-08..2025-10-13
+------------------------------------------------------------
+
+$ node scan-mr.js --symbol=EUR-USD --from=2024-09-08 --to=2025-10-13 --debug=1
+debug: zonesTimeline=2179, trendOk=1343 (61.6%)
+MR scan for EUR-USD 2024-09-08..2025-10-13
+  2024-10: total=1, BUY=1, SELL=0
+  2024-12: total=1, BUY=0, SELL=1
+  2025-01: total=1, BUY=0, SELL=1
+  2025-07: total=2, BUY=0, SELL=2
+  2025-09: total=1, BUY=0, SELL=1
+  2025-10: total=1, BUY=1, SELL=0
+
+Last 5 signals:
+2025-01-06T05:00:00.000Z SELL @1.03088 SL:1.03163 TP:1.03013 ctx:{"z":1.03098,"retest":true}
+2025-07-07T00:00:00.000Z SELL @1.17799 SL:1.17911 TP:1.17687 ctx:{"z":1.17868,"retest":true}
+2025-07-07T00:00:00.000Z SELL @1.17799 SL:1.17911 TP:1.17687 ctx:{"z":1.17868,"retest":true}
+2025-09-15T10:00:00.000Z SELL @1.17528 SL:1.17701 TP:1.17355 ctx:{"z":1.17587,"retest":true}
+2025-10-02T16:00:00.000Z BUY @1.17148 SL:1.16838 TP:1.17458 ctx:{"z":1.17086,"retest":true}
+
+
+$ node backtest-mr.js --symbol=EUR-USD --from=2024-09-08 --to=2025-10-13
+MR Backtest EUR-USD 2024-09-08..2025-10-13 (timeout=72 bars, trend=ON)
+signals=7, trades=7
+wins=4, losses=3, winRate=57.1%
+avgR=0.14, expectancy(R)=0.14, avgHoldHrs=81.0
+
+Last 5 trades:
+2025-01-06T05:00:00.000Z SELL entry=1.03088 exit=1.03163 outcome=SL R=-1.00 bars=2
+2025-07-07T00:00:00.000Z SELL entry=1.17799 exit=1.17687 outcome=TP R=1.00 bars=2
+2025-07-07T00:00:00.000Z SELL entry=1.17799 exit=1.17687 outcome=TP R=1.00 bars=2
+2025-09-15T10:00:00.000Z SELL entry=1.17528 exit=1.17701 outcome=SL R=-1.00 bars=2
+2025-10-02T16:00:00.000Z BUY entry=1.17148 exit=1.17458 outcome=TP R=1.00 bars=22
+
+
+$ node backtest-mr.js --symbol=EUR-USD --from=2024-09-08 --to=2025-10-13 --no-trend=1
+MR Backtest EUR-USD 2024-09-08..2025-10-13 (timeout=72 bars, trend=OFF)
+signals=7, trades=7
+wins=4, losses=3, winRate=57.1%
+avgR=0.14, expectancy(R)=0.14, avgHoldHrs=81.0
+
+Last 5 trades:
+2025-01-06T05:00:00.000Z SELL entry=1.03088 exit=1.03163 outcome=SL R=-1.00 bars=2
+2025-07-07T00:00:00.000Z SELL entry=1.17799 exit=1.17687 outcome=TP R=1.00 bars=2
+2025-07-07T00:00:00.000Z SELL entry=1.17799 exit=1.17687 outcome=TP R=1.00 bars=2
+2025-09-15T10:00:00.000Z SELL entry=1.17528 exit=1.17701 outcome=SL R=-1.00 bars=2
+2025-10-02T16:00:00.000Z BUY entry=1.17148 exit=1.17458 outcome=TP R=1.00 bars=22
+
+
+$ node scan-mr.js --symbol=GBP-USD --from=2024-09-08 --to=2025-10-13 --debug=1
+debug: zonesTimeline=2197, trendOk=988 (45.0%)
+MR scan for GBP-USD 2024-09-08..2025-10-13
+  2024-09: total=1, BUY=1, SELL=0
+  2024-11: total=1, BUY=1, SELL=0
+  2025-04: total=1, BUY=1, SELL=0
+  2025-09: total=1, BUY=1, SELL=0
+
+Last 5 signals:
+2024-09-11T14:00:00.000Z BUY @1.30146 SL:1.29717 TP:1.30575 ctx:{"z":1.30025,"retest":true}
+2024-11-08T17:00:00.000Z BUY @1.28967 SL:1.28516 TP:1.29418 ctx:{"z":1.28842,"retest":true}
+2025-04-01T00:00:00.000Z BUY @1.29259 SL:1.29135 TP:1.29383 ctx:{"z":1.29205,"retest":true}
+2025-09-07T22:00:00.000Z BUY @1.34863 SL:1.34813 TP:1.34913 ctx:{"z":1.34855,"retest":true}
+
+
+$ node backtest-mr.js --symbol=GBP-USD --from=2024-09-08 --to=2025-10-13
+MR Backtest GBP-USD 2024-09-08..2025-10-13 (timeout=72 bars, trend=ON)
+signals=4, trades=4
+wins=4, losses=0, winRate=100.0%
+avgR=0.85, expectancy(R)=0.85, avgHoldHrs=73.0
+
+Last 5 trades:
+2024-09-11T14:00:00.000Z BUY entry=1.30146 exit=1.30575 outcome=TP R=1.00 bars=20
+2024-11-08T17:00:00.000Z BUY entry=1.28967 exit=1.29147 outcome=TIMEOUT R=0.40 bars=48
+2025-04-01T00:00:00.000Z BUY entry=1.29259 exit=1.29383 outcome=TP R=1.00 bars=4
+2025-09-07T22:00:00.000Z BUY entry=1.34863 exit=1.34913 outcome=TP R=1.00 bars=1
+
+
+$ node backtest-mr.js --symbol=GBP-USD --from=2024-09-08 --to=2025-10-13 --no-trend=1
+MR Backtest GBP-USD 2024-09-08..2025-10-13 (timeout=72 bars, trend=OFF)
+signals=6, trades=6
+wins=5, losses=1, winRate=83.3%
+avgR=0.57, expectancy(R)=0.57, avgHoldHrs=95.0
+
+Last 5 trades:
+2024-11-08T17:00:00.000Z BUY entry=1.28967 exit=1.29147 outcome=TIMEOUT R=0.40 bars=48
+2024-12-05T17:00:00.000Z SELL entry=1.27461 exit=1.27754 outcome=SL R=-1.00 bars=19
+2025-04-01T00:00:00.000Z BUY entry=1.29259 exit=1.29383 outcome=TP R=1.00 bars=4
+2025-08-29T11:00:00.000Z BUY entry=1.34528 exit=1.34737 outcome=TP R=1.00 bars=3
+2025-09-07T22:00:00.000Z BUY entry=1.34863 exit=1.34913 outcome=TP R=1.00 bars=1
+
+
+$ node scan-mr.js --symbol=USD-JPY --from=2024-09-08 --to=2025-10-13 --debug=1
+debug: zonesTimeline=2173, trendOk=1401 (64.5%)
+MR scan for USD-JPY 2024-09-08..2025-10-13
+  2025-01: total=1, BUY=0, SELL=1
+  2025-07: total=1, BUY=0, SELL=1
+  2025-08: total=2, BUY=0, SELL=2
+
+Last 5 signals:
+2025-01-13T00:00:00.000Z SELL @157.78900 SL:158.00755 TP:157.57045 ctx:{"z":157.93183,"retest":true}
+2025-07-07T06:00:00.000Z SELL @145.02400 SL:145.27279 TP:144.77521 ctx:{"z":145.086,"retest":true}
+2025-08-17T23:00:00.000Z SELL @147.23200 SL:147.37385 TP:147.09015 ctx:{"z":147.319,"retest":true}
+2025-08-22T02:00:00.000Z SELL @148.48800 SL:148.78707 TP:148.18893 ctx:{"z":148.513,"retest":true}
+
+
+$ node backtest-mr.js --symbol=USD-JPY --from=2024-09-08 --to=2025-10-13
+MR Backtest USD-JPY 2024-09-08..2025-10-13 (timeout=72 bars, trend=ON)
+signals=4, trades=4
+wins=2, losses=2, winRate=50.0%
+avgR=-0.00, expectancy(R)=-0.00, avgHoldHrs=16.0
+
+Last 5 trades:
+2025-01-13T00:00:00.000Z SELL entry=157.78900 exit=157.57045 outcome=TP R=1.00 bars=1
+2025-07-07T06:00:00.000Z SELL entry=145.02400 exit=145.27279 outcome=SL R=-1.00 bars=2
+2025-08-17T23:00:00.000Z SELL entry=147.23200 exit=147.37385 outcome=SL R=-1.00 bars=1
+2025-08-22T02:00:00.000Z SELL entry=148.48800 exit=148.18893 outcome=TP R=1.00 bars=12
+
+
+$ node backtest-mr.js --symbol=USD-JPY --from=2024-09-08 --to=2025-10-13 --no-trend=1
+MR Backtest USD-JPY 2024-09-08..2025-10-13 (timeout=72 bars, trend=OFF)
+signals=7, trades=7
+wins=5, losses=2, winRate=71.4%
+avgR=0.43, expectancy(R)=0.43, avgHoldHrs=27.0
+
+Last 5 trades:
+2025-01-13T00:00:00.000Z SELL entry=157.78900 exit=157.57045 outcome=TP R=1.00 bars=1
+2025-05-12T01:00:00.000Z SELL entry=146.09200 exit=145.76169 outcome=TP R=1.00 bars=1
+2025-07-07T06:00:00.000Z SELL entry=145.02400 exit=145.27279 outcome=SL R=-1.00 bars=2
+2025-08-17T23:00:00.000Z SELL entry=147.23200 exit=147.37385 outcome=SL R=-1.00 bars=1
+2025-08-22T02:00:00.000Z SELL entry=148.48800 exit=148.18893 outcome=TP R=1.00 bars=12
+
+[daily-scan] 2025-10-13 symbols=EUR-USD, GBP-USD, USD-JPY window 2024-09-08..2025-10-13
+
+== EUR-USD: S2 scan ==
+debug: zonesTimeline=2179, trendOk=1343 (61.6%)
+MR scan for EUR-USD 2024-09-08..2025-10-13
+  2024-10: total=1, BUY=1, SELL=0
+  2024-12: total=1, BUY=0, SELL=1
+  2025-01: total=1, BUY=0, SELL=1
+  2025-07: total=2, BUY=0, SELL=2
+  2025-09: total=1, BUY=0, SELL=1
+  2025-10: total=1, BUY=1, SELL=0
+
+Last 5 signals:
+2025-01-06T05:00:00.000Z SELL @1.03088 SL:1.03163 TP:1.03013 ctx:{"z":1.03098,"retest":true}
+2025-07-07T00:00:00.000Z SELL @1.17799 SL:1.17911 TP:1.17687 ctx:{"z":1.17868,"retest":true}
+2025-07-07T00:00:00.000Z SELL @1.17799 SL:1.17911 TP:1.17687 ctx:{"z":1.17868,"retest":true}
+2025-09-15T10:00:00.000Z SELL @1.17528 SL:1.17701 TP:1.17355 ctx:{"z":1.17587,"retest":true}
+2025-10-02T16:00:00.000Z BUY @1.17148 SL:1.16838 TP:1.17458 ctx:{"z":1.17086,"retest":true}
+
+
+== EUR-USD: S3 backtest (trend ON) ==
+MR Backtest EUR-USD 2024-09-08..2025-10-13 (timeout=72 bars, trend=ON)
+signals=7, trades=7
+wins=4, losses=3, winRate=57.1%
+avgR=0.14, expectancy(R)=0.14, avgHoldHrs=81.0
+
+Last 5 trades:
+2025-01-06T05:00:00.000Z SELL entry=1.03088 exit=1.03163 outcome=SL R=-1.00 bars=2
+2025-07-07T00:00:00.000Z SELL entry=1.17799 exit=1.17687 outcome=TP R=1.00 bars=2
+2025-07-07T00:00:00.000Z SELL entry=1.17799 exit=1.17687 outcome=TP R=1.00 bars=2
+2025-09-15T10:00:00.000Z SELL entry=1.17528 exit=1.17701 outcome=SL R=-1.00 bars=2
+2025-10-02T16:00:00.000Z BUY entry=1.17148 exit=1.17458 outcome=TP R=1.00 bars=22
+
+
+== EUR-USD: S4 backtest (trend OFF) ==
+MR Backtest EUR-USD 2024-09-08..2025-10-13 (timeout=72 bars, trend=OFF)
+signals=7, trades=7
+wins=4, losses=3, winRate=57.1%
+avgR=0.14, expectancy(R)=0.14, avgHoldHrs=81.0
+
+Last 5 trades:
+2025-01-06T05:00:00.000Z SELL entry=1.03088 exit=1.03163 outcome=SL R=-1.00 bars=2
+2025-07-07T00:00:00.000Z SELL entry=1.17799 exit=1.17687 outcome=TP R=1.00 bars=2
+2025-07-07T00:00:00.000Z SELL entry=1.17799 exit=1.17687 outcome=TP R=1.00 bars=2
+2025-09-15T10:00:00.000Z SELL entry=1.17528 exit=1.17701 outcome=SL R=-1.00 bars=2
+2025-10-02T16:00:00.000Z BUY entry=1.17148 exit=1.17458 outcome=TP R=1.00 bars=22
+
+-- EUR-USD: wrote artifacts -> reports/daily/2025-10-13/scan_EUR-USD.txt , signals_EUR-USD.json
+
+== GBP-USD: S2 scan ==
+debug: zonesTimeline=2197, trendOk=988 (45.0%)
+MR scan for GBP-USD 2024-09-08..2025-10-13
+  2024-09: total=1, BUY=1, SELL=0
+  2024-11: total=1, BUY=1, SELL=0
+  2025-04: total=1, BUY=1, SELL=0
+  2025-09: total=1, BUY=1, SELL=0
+
+Last 5 signals:
+2024-09-11T14:00:00.000Z BUY @1.30146 SL:1.29717 TP:1.30575 ctx:{"z":1.30025,"retest":true}
+2024-11-08T17:00:00.000Z BUY @1.28967 SL:1.28516 TP:1.29418 ctx:{"z":1.28842,"retest":true}
+2025-04-01T00:00:00.000Z BUY @1.29259 SL:1.29135 TP:1.29383 ctx:{"z":1.29205,"retest":true}
+2025-09-07T22:00:00.000Z BUY @1.34863 SL:1.34813 TP:1.34913 ctx:{"z":1.34855,"retest":true}
+
+
+== GBP-USD: S3 backtest (trend ON) ==
+MR Backtest GBP-USD 2024-09-08..2025-10-13 (timeout=72 bars, trend=ON)
+signals=4, trades=4
+wins=4, losses=0, winRate=100.0%
+avgR=0.85, expectancy(R)=0.85, avgHoldHrs=73.0
+
+Last 5 trades:
+2024-09-11T14:00:00.000Z BUY entry=1.30146 exit=1.30575 outcome=TP R=1.00 bars=20
+2024-11-08T17:00:00.000Z BUY entry=1.28967 exit=1.29147 outcome=TIMEOUT R=0.40 bars=48
+2025-04-01T00:00:00.000Z BUY entry=1.29259 exit=1.29383 outcome=TP R=1.00 bars=4
+2025-09-07T22:00:00.000Z BUY entry=1.34863 exit=1.34913 outcome=TP R=1.00 bars=1
+
+
+== GBP-USD: S4 backtest (trend OFF) ==
+MR Backtest GBP-USD 2024-09-08..2025-10-13 (timeout=72 bars, trend=OFF)
+signals=6, trades=6
+wins=5, losses=1, winRate=83.3%
+avgR=0.57, expectancy(R)=0.57, avgHoldHrs=95.0
+
+Last 5 trades:
+2024-11-08T17:00:00.000Z BUY entry=1.28967 exit=1.29147 outcome=TIMEOUT R=0.40 bars=48
+2024-12-05T17:00:00.000Z SELL entry=1.27461 exit=1.27754 outcome=SL R=-1.00 bars=19
+2025-04-01T00:00:00.000Z BUY entry=1.29259 exit=1.29383 outcome=TP R=1.00 bars=4
+2025-08-29T11:00:00.000Z BUY entry=1.34528 exit=1.34737 outcome=TP R=1.00 bars=3
+2025-09-07T22:00:00.000Z BUY entry=1.34863 exit=1.34913 outcome=TP R=1.00 bars=1
+
+-- GBP-USD: wrote artifacts -> reports/daily/2025-10-13/scan_GBP-USD.txt , signals_GBP-USD.json
+
+== USD-JPY: S2 scan ==
+debug: zonesTimeline=2173, trendOk=1401 (64.5%)
+MR scan for USD-JPY 2024-09-08..2025-10-13
+  2025-01: total=1, BUY=0, SELL=1
+  2025-07: total=1, BUY=0, SELL=1
+  2025-08: total=2, BUY=0, SELL=2
+
+Last 5 signals:
+2025-01-13T00:00:00.000Z SELL @157.78900 SL:158.00755 TP:157.57045 ctx:{"z":157.93183,"retest":true}
+2025-07-07T06:00:00.000Z SELL @145.02400 SL:145.27279 TP:144.77521 ctx:{"z":145.086,"retest":true}
+2025-08-17T23:00:00.000Z SELL @147.23200 SL:147.37385 TP:147.09015 ctx:{"z":147.319,"retest":true}
+2025-08-22T02:00:00.000Z SELL @148.48800 SL:148.78707 TP:148.18893 ctx:{"z":148.513,"retest":true}
+
+
+== USD-JPY: S3 backtest (trend ON) ==
+MR Backtest USD-JPY 2024-09-08..2025-10-13 (timeout=72 bars, trend=ON)
+signals=4, trades=4
+wins=2, losses=2, winRate=50.0%
+avgR=-0.00, expectancy(R)=-0.00, avgHoldHrs=16.0
+
+Last 5 trades:
+2025-01-13T00:00:00.000Z SELL entry=157.78900 exit=157.57045 outcome=TP R=1.00 bars=1
+2025-07-07T06:00:00.000Z SELL entry=145.02400 exit=145.27279 outcome=SL R=-1.00 bars=2
+2025-08-17T23:00:00.000Z SELL entry=147.23200 exit=147.37385 outcome=SL R=-1.00 bars=1
+2025-08-22T02:00:00.000Z SELL entry=148.48800 exit=148.18893 outcome=TP R=1.00 bars=12
+
+
+== USD-JPY: S4 backtest (trend OFF) ==
+MR Backtest USD-JPY 2024-09-08..2025-10-13 (timeout=72 bars, trend=OFF)
+signals=7, trades=7
+wins=5, losses=2, winRate=71.4%
+avgR=0.43, expectancy(R)=0.43, avgHoldHrs=27.0
+
+Last 5 trades:
+2025-01-13T00:00:00.000Z SELL entry=157.78900 exit=157.57045 outcome=TP R=1.00 bars=1
+2025-05-12T01:00:00.000Z SELL entry=146.09200 exit=145.76169 outcome=TP R=1.00 bars=1
+2025-07-07T06:00:00.000Z SELL entry=145.02400 exit=145.27279 outcome=SL R=-1.00 bars=2
+2025-08-17T23:00:00.000Z SELL entry=147.23200 exit=147.37385 outcome=SL R=-1.00 bars=1
+2025-08-22T02:00:00.000Z SELL entry=148.48800 exit=148.18893 outcome=TP R=1.00 bars=12
+
+-- USD-JPY: wrote artifacts -> reports/daily/2025-10-13/scan_USD-JPY.txt , signals_USD-JPY.json
+
+----- DIGEST -----
+daily digest — 2025-10-13
+symbols: EUR-USD, GBP-USD, USD-JPY
+window: 2024-09-08 .. 2025-10-13
+EUR-USD: winRate ON=57.1% | OFF=57.1%
+GBP-USD: winRate ON=100.0% | OFF=83.3%
+USD-JPY: winRate ON=50.0% | OFF=71.4%
+
+[daily-scan] 2025-10-13 symbols=EUR-USD, GBP-USD, USD-JPY window 2024-09-08..2025-10-13
+
+== EUR-USD: S2 scan ==
+debug: zonesTimeline=2179, trendOk=1343 (61.6%)
+MR scan for EUR-USD 2024-09-08..2025-10-13
+  2024-10: total=1, BUY=1, SELL=0
+  2024-12: total=1, BUY=0, SELL=1
+  2025-01: total=1, BUY=0, SELL=1
+  2025-07: total=2, BUY=0, SELL=2
+  2025-09: total=1, BUY=0, SELL=1
+  2025-10: total=1, BUY=1, SELL=0
+
+Last 5 signals:
+2025-01-06T05:00:00.000Z SELL @1.03088 SL:1.03163 TP:1.03013 ctx:{"z":1.03098,"retest":true}
+2025-07-07T00:00:00.000Z SELL @1.17799 SL:1.17911 TP:1.17687 ctx:{"z":1.17868,"retest":true}
+2025-07-07T00:00:00.000Z SELL @1.17799 SL:1.17911 TP:1.17687 ctx:{"z":1.17868,"retest":true}
+2025-09-15T10:00:00.000Z SELL @1.17528 SL:1.17701 TP:1.17355 ctx:{"z":1.17587,"retest":true}
+2025-10-02T16:00:00.000Z BUY @1.17148 SL:1.16838 TP:1.17458 ctx:{"z":1.17086,"retest":true}
+
+-- EUR-USD: no new (latest already emitted 2025-10-02T16:00:00.000Z)
+
+== EUR-USD: S3 backtest (trend ON) ==
+MR Backtest EUR-USD 2024-09-08..2025-10-13 (timeout=72 bars, trend=ON)
+signals=7, trades=7
+wins=4, losses=3, winRate=57.1%
+avgR=0.14, expectancy(R)=0.14, avgHoldHrs=81.0
+
+Last 5 trades:
+2025-01-06T05:00:00.000Z SELL entry=1.03088 exit=1.03163 outcome=SL R=-1.00 bars=2
+2025-07-07T00:00:00.000Z SELL entry=1.17799 exit=1.17687 outcome=TP R=1.00 bars=2
+2025-07-07T00:00:00.000Z SELL entry=1.17799 exit=1.17687 outcome=TP R=1.00 bars=2
+2025-09-15T10:00:00.000Z SELL entry=1.17528 exit=1.17701 outcome=SL R=-1.00 bars=2
+2025-10-02T16:00:00.000Z BUY entry=1.17148 exit=1.17458 outcome=TP R=1.00 bars=22
+
+
+== EUR-USD: S4 backtest (trend OFF) ==
+MR Backtest EUR-USD 2024-09-08..2025-10-13 (timeout=72 bars, trend=OFF)
+signals=7, trades=7
+wins=4, losses=3, winRate=57.1%
+avgR=0.14, expectancy(R)=0.14, avgHoldHrs=81.0
+
+Last 5 trades:
+2025-01-06T05:00:00.000Z SELL entry=1.03088 exit=1.03163 outcome=SL R=-1.00 bars=2
+2025-07-07T00:00:00.000Z SELL entry=1.17799 exit=1.17687 outcome=TP R=1.00 bars=2
+2025-07-07T00:00:00.000Z SELL entry=1.17799 exit=1.17687 outcome=TP R=1.00 bars=2
+2025-09-15T10:00:00.000Z SELL entry=1.17528 exit=1.17701 outcome=SL R=-1.00 bars=2
+2025-10-02T16:00:00.000Z BUY entry=1.17148 exit=1.17458 outcome=TP R=1.00 bars=22
+
+
+== GBP-USD: S2 scan ==
+debug: zonesTimeline=2197, trendOk=988 (45.0%)
+MR scan for GBP-USD 2024-09-08..2025-10-13
+  2024-09: total=1, BUY=1, SELL=0
+  2024-11: total=1, BUY=1, SELL=0
+  2025-04: total=1, BUY=1, SELL=0
+  2025-09: total=1, BUY=1, SELL=0
+
+Last 5 signals:
+2024-09-11T14:00:00.000Z BUY @1.30146 SL:1.29717 TP:1.30575 ctx:{"z":1.30025,"retest":true}
+2024-11-08T17:00:00.000Z BUY @1.28967 SL:1.28516 TP:1.29418 ctx:{"z":1.28842,"retest":true}
+2025-04-01T00:00:00.000Z BUY @1.29259 SL:1.29135 TP:1.29383 ctx:{"z":1.29205,"retest":true}
+2025-09-07T22:00:00.000Z BUY @1.34863 SL:1.34813 TP:1.34913 ctx:{"z":1.34855,"retest":true}
+
+-- GBP-USD: no new (latest already emitted 2025-09-07T22:00:00.000Z)
+
+== GBP-USD: S3 backtest (trend ON) ==
+MR Backtest GBP-USD 2024-09-08..2025-10-13 (timeout=72 bars, trend=ON)
+signals=4, trades=4
+wins=4, losses=0, winRate=100.0%
+avgR=0.85, expectancy(R)=0.85, avgHoldHrs=73.0
+
+Last 5 trades:
+2024-09-11T14:00:00.000Z BUY entry=1.30146 exit=1.30575 outcome=TP R=1.00 bars=20
+2024-11-08T17:00:00.000Z BUY entry=1.28967 exit=1.29147 outcome=TIMEOUT R=0.40 bars=48
+2025-04-01T00:00:00.000Z BUY entry=1.29259 exit=1.29383 outcome=TP R=1.00 bars=4
+2025-09-07T22:00:00.000Z BUY entry=1.34863 exit=1.34913 outcome=TP R=1.00 bars=1
+
+
+== GBP-USD: S4 backtest (trend OFF) ==
+MR Backtest GBP-USD 2024-09-08..2025-10-13 (timeout=72 bars, trend=OFF)
+signals=6, trades=6
+wins=5, losses=1, winRate=83.3%
+avgR=0.57, expectancy(R)=0.57, avgHoldHrs=95.0
+
+Last 5 trades:
+2024-11-08T17:00:00.000Z BUY entry=1.28967 exit=1.29147 outcome=TIMEOUT R=0.40 bars=48
+2024-12-05T17:00:00.000Z SELL entry=1.27461 exit=1.27754 outcome=SL R=-1.00 bars=19
+2025-04-01T00:00:00.000Z BUY entry=1.29259 exit=1.29383 outcome=TP R=1.00 bars=4
+2025-08-29T11:00:00.000Z BUY entry=1.34528 exit=1.34737 outcome=TP R=1.00 bars=3
+2025-09-07T22:00:00.000Z BUY entry=1.34863 exit=1.34913 outcome=TP R=1.00 bars=1
+
+
+== USD-JPY: S2 scan ==
+debug: zonesTimeline=2173, trendOk=1401 (64.5%)
+MR scan for USD-JPY 2024-09-08..2025-10-13
+  2025-01: total=1, BUY=0, SELL=1
+  2025-07: total=1, BUY=0, SELL=1
+  2025-08: total=2, BUY=0, SELL=2
+
+Last 5 signals:
+2025-01-13T00:00:00.000Z SELL @157.78900 SL:158.00755 TP:157.57045 ctx:{"z":157.93183,"retest":true}
+2025-07-07T06:00:00.000Z SELL @145.02400 SL:145.27279 TP:144.77521 ctx:{"z":145.086,"retest":true}
+2025-08-17T23:00:00.000Z SELL @147.23200 SL:147.37385 TP:147.09015 ctx:{"z":147.319,"retest":true}
+2025-08-22T02:00:00.000Z SELL @148.48800 SL:148.78707 TP:148.18893 ctx:{"z":148.513,"retest":true}
+
+-- USD-JPY: no new (latest already emitted 2025-08-22T02:00:00.000Z)
+
+== USD-JPY: S3 backtest (trend ON) ==
+MR Backtest USD-JPY 2024-09-08..2025-10-13 (timeout=72 bars, trend=ON)
+signals=4, trades=4
+wins=2, losses=2, winRate=50.0%
+avgR=-0.00, expectancy(R)=-0.00, avgHoldHrs=16.0
+
+Last 5 trades:
+2025-01-13T00:00:00.000Z SELL entry=157.78900 exit=157.57045 outcome=TP R=1.00 bars=1
+2025-07-07T06:00:00.000Z SELL entry=145.02400 exit=145.27279 outcome=SL R=-1.00 bars=2
+2025-08-17T23:00:00.000Z SELL entry=147.23200 exit=147.37385 outcome=SL R=-1.00 bars=1
+2025-08-22T02:00:00.000Z SELL entry=148.48800 exit=148.18893 outcome=TP R=1.00 bars=12
+
+
+== USD-JPY: S4 backtest (trend OFF) ==
+MR Backtest USD-JPY 2024-09-08..2025-10-13 (timeout=72 bars, trend=OFF)
+signals=7, trades=7
+wins=5, losses=2, winRate=71.4%
+avgR=0.43, expectancy(R)=0.43, avgHoldHrs=27.0
+
+Last 5 trades:
+2025-01-13T00:00:00.000Z SELL entry=157.78900 exit=157.57045 outcome=TP R=1.00 bars=1
+2025-05-12T01:00:00.000Z SELL entry=146.09200 exit=145.76169 outcome=TP R=1.00 bars=1
+2025-07-07T06:00:00.000Z SELL entry=145.02400 exit=145.27279 outcome=SL R=-1.00 bars=2
+2025-08-17T23:00:00.000Z SELL entry=147.23200 exit=147.37385 outcome=SL R=-1.00 bars=1
+2025-08-22T02:00:00.000Z SELL entry=148.48800 exit=148.18893 outcome=TP R=1.00 bars=12
+
+
+----- DIGEST -----
+daily digest — 2025-10-13
+symbols: EUR-USD, GBP-USD, USD-JPY
+window: 2024-09-08 .. 2025-10-13
+EUR-USD: winRate ON=57.1% | OFF=57.1%
+GBP-USD: winRate ON=100.0% | OFF=83.3%
+USD-JPY: winRate ON=50.0% | OFF=71.4%
+

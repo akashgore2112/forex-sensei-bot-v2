@@ -1,0 +1,10 @@
+{
+  "symbol": "EUR-USD",
+  "runAt": "2025-10-13T18:21:15.408Z",
+  "window": {
+    "from": "2024-09-08",
+    "to": "2025-10-13"
+  },
+  "latestTs": "2025-10-02T16:00:00.000Z",
+  "notes": "S2/S3/S4 raw outputs are stored in per-day log and scan_*.txt"
+}

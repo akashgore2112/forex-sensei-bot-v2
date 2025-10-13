@@ -1,0 +1,6 @@
+daily digest — 2025-10-13
+symbols: EUR-USD, GBP-USD, USD-JPY
+window: 2024-09-08 .. 2025-10-13
+EUR-USD: winRate ON=57.1% | OFF=57.1%
+GBP-USD: winRate ON=100.0% | OFF=83.3%
+USD-JPY: winRate ON=50.0% | OFF=71.4%

@@ -1,0 +1,12 @@
+debug: zonesTimeline=2197, trendOk=988 (45.0%)
+MR scan for GBP-USD 2024-09-08..2025-10-13
+  2024-09: total=1, BUY=1, SELL=0
+  2024-11: total=1, BUY=1, SELL=0
+  2025-04: total=1, BUY=1, SELL=0
+  2025-09: total=1, BUY=1, SELL=0
+
+Last 5 signals:
+2024-09-11T14:00:00.000Z BUY @1.30146 SL:1.29717 TP:1.30575 ctx:{"z":1.30025,"retest":true}
+2024-11-08T17:00:00.000Z BUY @1.28967 SL:1.28516 TP:1.29418 ctx:{"z":1.28842,"retest":true}
+2025-04-01T00:00:00.000Z BUY @1.29259 SL:1.29135 TP:1.29383 ctx:{"z":1.29205,"retest":true}
+2025-09-07T22:00:00.000Z BUY @1.34863 SL:1.34813 TP:1.34913 ctx:{"z":1.34855,"retest":true}
