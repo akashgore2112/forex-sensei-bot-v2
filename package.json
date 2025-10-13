@@ -20,8 +20,7 @@
     "data:duka:batch:validate": "node scripts/duka-batch.js --validate",
 
     "scan:mr": "node scripts/scan-mr.js --symbol=EUR-USD",
-    "bt:mr": "node scripts/backtest-mr.js --symbol=EUR-USD"
-    
+    "bt:mr": "node scripts/backtest-mr.js --symbol=EUR-USD",
     "daily:scan": "node scripts/daily-scan.js",
     "weekly:guard": "node scripts/weekly-guard.js"
   },
