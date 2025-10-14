@@ -1,5 +1,7 @@
-// scripts/weekly_guard.js
-// Weekly guard — reads latest signal time from reports/daily/_last/signals_*.json (flexible shapes)
+// scripts/weekly_guard.js (ESM)
+// Weekly guard: says OK if we saw any signal within N weeks,
+// reading from reports/daily/.last (preferred), then _last, then newest YYYY-MM-DD.
+// Flexible JSON reader: supports {latest}, arrays of signals with {entry}, etc.
 
 import fs from "fs";
 import path from "path";
@@ -8,102 +10,125 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ---------------- utils ----------------
+// ----------------- helpers -----------------
 const arg = (name, def = null) => {
   const m = process.argv.join(" ").match(new RegExp(`--${name}="?([^"\\s]+)"?`));
   return m ? m[1] : def;
 };
-const ensureDir = (p) => fs.mkdirSync(p, { recursive: true });
 const exists = (p) => { try { fs.accessSync(p, fs.constants.F_OK); return true; } catch { return false; } };
+const ensureDir = (p) => fs.mkdirSync(p, { recursive: true });
 const readJSON = (p) => JSON.parse(fs.readFileSync(p, "utf8"));
-const iso = (d) => new Date(d).toISOString().slice(0, 10);
+const isoDate = (d) => new Date(d).toISOString().slice(0, 10);
+
+const WEEKS = parseInt(arg("weeks", "12"), 10);
+const SYMBOLS = (arg("symbols", "EUR-USD,GBP-USD,USD-JPY")).split(",").map(s => s.trim()).filter(Boolean);
 
 const now = new Date();
-const WEEKS = parseInt(arg("weeks", "12"), 10);
-const SYMBOLS = (arg("symbols", "EUR-USD,GBP-USD,USD-JPY"))
-  .split(",").map(s => s.trim()).filter(Boolean);
 const cutoffMs = now.getTime() - WEEKS * 7 * 24 * 3600 * 1000;
 
-const dailyRoot = path.join(__dirname, "..", "reports", "daily");
-let lastDir = path.join(dailyRoot, "_last");
-if (!exists(lastDir)) {
-  // fallback to newest YYYY-MM-DD folder
-  const entries = exists(dailyRoot) ? fs.readdirSync(dailyRoot)
-    .filter(f => /^\d{4}-\d{2}-\d{2}$/.test(f)).sort() : [];
-  if (entries.length === 0) {
-    console.error("[weekly_guard] ERROR: no daily reports found. Run daily-scan first.");
-    process.exit(1);
-  }
-  lastDir = path.join(dailyRoot, entries[entries.length - 1]);
+const repoRoot = path.join(__dirname, "..");
+const dailyRoot = path.join(repoRoot, "reports", "daily");
+
+// Prefer .last, then _last, then newest dated folder
+function findLatestDailyDir() {
+  const candidates = [".last", "_last"].map(n => path.join(dailyRoot, n));
+  for (const c of candidates) if (exists(c)) return { dir: c, label: path.basename(c) };
+
+  // fallback to newest YYYY-MM-DD
+  if (!exists(dailyRoot)) return { dir: null, label: null };
+  const dated = fs.readdirSync(dailyRoot).filter(x => /^\d{4}-\d{2}-\d{2}$/.test(x)).sort();
+  if (!dated.length) return { dir: null, label: null };
+  const pick = path.join(dailyRoot, dated.at(-1));
+  return { dir: pick, label: dated.at(-1) };
 }
 
-// Grab the latest signal time from flexible JSON shapes
+// pull a timestamp (ms) from various shapes
 function latestSignalMs(obj) {
-  const candidates = [];
+  const ts = [];
 
-  // new minimal summary uses "latest"
-  if (obj?.latest) candidates.push(new Date(obj.latest).getTime());
+  // 1) direct latest
+  if (obj?.latest) ts.push(new Date(obj.latest).getTime());
 
-  // common arrays
+  // 2) arrays with {entry}
   if (Array.isArray(obj?.lastSignals))
-    for (const s of obj.lastSignals) if (s?.entry) candidates.push(new Date(s.entry).getTime());
-
+    for (const s of obj.lastSignals) if (s?.entry) ts.push(new Date(s.entry).getTime());
   if (Array.isArray(obj?.signals))
-    for (const s of obj.signals) if (s?.entry) candidates.push(new Date(s.entry).getTime());
-
+    for (const s of obj.signals) if (s?.entry) ts.push(new Date(s.entry).getTime());
   if (Array.isArray(obj?.events))
-    for (const e of obj.events) if (e?.entry) candidates.push(new Date(e.entry).getTime());
+    for (const e of obj.events) if (e?.entry) ts.push(new Date(e.entry).getTime());
 
-  // summaries
-  if (obj?.summary?.lastSignalTime) candidates.push(new Date(obj.summary.lastSignalTime).getTime());
-  if (obj?.lastSignal) candidates.push(new Date(obj.lastSignal).getTime());
+  // 3) summary fields
+  if (obj?.summary?.lastSignalTime) ts.push(new Date(obj.summary.lastSignalTime).getTime());
+  if (obj?.lastSignal) ts.push(new Date(obj.lastSignal).getTime());
 
-  return candidates.length ? Math.max(...candidates) : null;
+  return ts.length ? Math.max(...ts) : null;
 }
 
-// ---------------- run ----------------
-const weeklyOutDir = path.join(__dirname, "..", "reports", "weekly");
-ensureDir(weeklyOutDir);
+// try per-symbol JSON, then digest.txt (JSON)
+function latestForSymbol(baseDir, symbol) {
+  const tried = [];
+  const perSymbol = path.join(baseDir, `signals_${symbol}.json`);
+  tried.push(perSymbol);
+  if (exists(perSymbol)) {
+    try {
+      const o = readJSON(perSymbol);
+      const t = latestSignalMs(o);
+      if (t) return { t, source: perSymbol };
+    } catch (e) {
+      // continue
+    }
+  }
 
-const jsonOut = {
-  date: iso(now),
+  const digest = path.join(baseDir, "digest.txt"); // JSON despite .txt
+  tried.push(digest);
+  if (exists(digest)) {
+    try {
+      const o = readJSON(digest);
+      if (o?.latest) return { t: new Date(o.latest).getTime(), source: digest };
+    } catch (e) {
+      // continue
+    }
+  }
+  return { t: null, source: tried.join(" | ") };
+}
+
+// ----------------- run -----------------
+const weeklyDir = path.join(repoRoot, "reports", "weekly");
+ensureDir(weeklyDir);
+
+const { dir: baseDir, label } = findLatestDailyDir();
+if (!baseDir) {
+  console.error("[weekly_guard] ERROR: no daily reports found. Run daily-scan first.");
+  process.exit(1);
+}
+
+const outJson = {
+  date: isoDate(now),
   weeks: WEEKS,
-  symbols: {},
+  baseDir: baseDir.replace(repoRoot + path.sep, ""),
+  baseLabel: label,
+  symbols: {}
 };
 
 const lines = [];
 for (const sym of SYMBOLS) {
-  const file = path.join(lastDir, `signals_${sym}.json`);
+  const { t, source } = latestForSymbol(baseDir, sym);
   let status = "BORDERLINE";
   let lastIso = null;
 
-  if (exists(file)) {
-    try {
-      const obj = readJSON(file);
-      const t = latestSignalMs(obj);
-      if (t) {
-        lastIso = new Date(t).toISOString();
-        if (t >= cutoffMs) status = "OK";
-      }
-    } catch (e) {
-      status = "ERROR";
-      lastIso = `parse-failed: ${e.message}`;
-    }
-  } else {
-    status = "MISSING";
+  if (t) {
+    lastIso = new Date(t).toISOString();
+    if (t >= cutoffMs) status = "OK";
   }
-
-  jsonOut.symbols[sym] = { status, lastSignal: lastIso };
-  lines.push(`${sym}: ${status}${lastIso ? ` — last=${lastIso}` : ""}`);
+  outJson.symbols[sym] = { status, last: lastIso, source: source.replace(repoRoot + path.sep, "") };
+  lines.push(`${sym}: ${status}${lastIso ? ` — last=${lastIso}` : ""} (src=${outJson.symbols[sym].source})`);
 }
 
-const fnBase = `weekly_${iso(now)}`;
-fs.writeFileSync(path.join(weeklyOutDir, `${fnBase}.json`), JSON.stringify(jsonOut, null, 2));
-fs.writeFileSync(path.join(weeklyOutDir, `${fnBase}.txt`), `${fnBase}\nweeks=${WEEKS}\n\n${lines.join("\n")}\n`);
+const fnBase = `weekly_${isoDate(now)}`;
+fs.writeFileSync(path.join(weeklyDir, `${fnBase}.json`), JSON.stringify(outJson, null, 2));
+fs.writeFileSync(path.join(weeklyDir, `${fnBase}.txt`), `${fnBase}\nweeks=${WEEKS}\nbase=${outJson.baseDir}\n\n${lines.join("\n")}\n`);
 
 console.log("[weekly_guard] wrote:");
 console.log(`  reports/weekly/${fnBase}.json`);
 console.log(`  reports/weekly/${fnBase}.txt`);
-for (const [sym, info] of Object.entries(jsonOut.symbols)) {
-  console.log(`[weekly_guard] ${sym}: ${info.status}${info.lastSignal ? ` — last=${info.lastSignal}` : ""}`);
-}
+for (const l of lines) console.log("[weekly_guard] " + l);
