@@ -1,0 +1,23 @@
+{
+  "date": "2025-10-14",
+  "weeks": 12,
+  "baseDir": "reports/daily/.last",
+  "baseLabel": ".last",
+  "symbols": {
+    "EUR-USD": {
+      "status": "OK",
+      "last": "2025-10-13T00:00:00.000Z",
+      "source": "reports/daily/.last/signals_EUR-USD.json"
+    },
+    "GBP-USD": {
+      "status": "OK",
+      "last": "2025-10-13T00:00:00.000Z",
+      "source": "reports/daily/.last/signals_GBP-USD.json"
+    },
+    "USD-JPY": {
+      "status": "OK",
+      "last": "2025-10-13T00:00:00.000Z",
+      "source": "reports/daily/.last/signals_USD-JPY.json"
+    }
+  }
+}

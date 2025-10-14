@@ -1,0 +1,11 @@
+{
+  "symbol": "USD-JPY",
+  "runAt": "2025-10-13T18:21:17.220Z",
+  "window": {
+    "from": "2024-09-08",
+    "to": "2025-10-13"
+  },
+  "latestTs": "2025-08-22T02:00:00.000Z",
+  "notes": "S2/S3/S4 raw outputs are stored in per-day log and scan_*.txt",
+  "latest": "2025-10-13T00:00:00.000Z"
+}

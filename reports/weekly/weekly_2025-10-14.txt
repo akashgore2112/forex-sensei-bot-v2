@@ -1,0 +1,7 @@
+weekly_2025-10-14
+weeks=12
+base=reports/daily/.last
+
+EUR-USD: OK — last=2025-10-13T00:00:00.000Z (src=reports/daily/.last/signals_EUR-USD.json)
+GBP-USD: OK — last=2025-10-13T00:00:00.000Z (src=reports/daily/.last/signals_GBP-USD.json)
+USD-JPY: OK — last=2025-10-13T00:00:00.000Z (src=reports/daily/.last/signals_USD-JPY.json)
