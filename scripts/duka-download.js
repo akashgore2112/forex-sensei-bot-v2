@@ -1,8 +1,4 @@
 // scripts/duka-download.js
-// Single-symbol, month-by-month downloader with low-memory child process.
-// Usage (env):
-//   INSTRUMENT=EURUSD DUKA_FROM_MONTH=2023-01 DUKA_TO_MONTH=2025-12 node scripts/duka-download.js
-
 import "../src/utils/env.js";
 import fs from "fs";
 import path from "path";
@@ -18,7 +14,6 @@ const TO_M   = process.env.DUKA_TO_MONTH   || "2025-12";
 const TF     = process.env.DUKA_TIMEFRAME  || "m1";
 const PRICE_FMT = "csv";
 
-// where to save: data/raw/duka/<SYMBOL>/YYYY-MM
 const OUT_BASE = path.join(ROOT, "data", "raw", "duka", INSTR.toUpperCase());
 
 function ensureDir(p) { fs.mkdirSync(p, { recursive: true }); }
@@ -36,8 +31,12 @@ function monthList(fromYYYYMM, toYYYYMM) {
 }
 
 function runNPX(args) {
-  // low memory to avoid OOM on phones
-  const env = { ...process.env, NODE_OPTIONS: "--max-old-space-size=256" };
+  const env = {
+    ...process.env,
+    NODE_OPTIONS: "--max-old-space-size=256",
+    // force official registry to avoid mirrors that miss versions
+    NPM_CONFIG_REGISTRY: process.env.NPM_CONFIG_REGISTRY || "https://registry.npmjs.org/"
+  };
   return execFileSync("npx", args, { stdio: "inherit", env });
 }
 
@@ -46,10 +45,16 @@ function csvExists(dir) {
   catch { return false; }
 }
 
-(async function main() {
+async function main() {
   const months = monthList(FROM_M, TO_M);
   console.log(`Downloading ${INSTR} ${months[0]}..${months.at(-1)}  ->  ${OUT_BASE}`);
   ensureDir(OUT_BASE);
+
+  // Try a few package versions in order
+  const versions = [
+    process.env.DUKA_CLI_VERSION || "1.6.2", // primary fallback known to exist widely
+    "latest"
+  ];
 
   for (const ym of months) {
     const [y, m] = ym.split("-").map(Number);
@@ -64,39 +69,43 @@ function csvExists(dir) {
     }
 
     console.log(`\n> downloading ${INSTR} ${ym}  ->  ${outDir}`);
-    console.log("Downloading historical price data for:");
-    console.log(`Instrument:  ${INSTR}`);
-    console.log(`Timeframe:   ${TF}`);
-    console.log(`From date:   ${from}`);
-    console.log(`To date:     ${to}`);
-    console.log(`Price type:  bid`);
-    console.log(`Format:      ${PRICE_FMT}`);
+    console.log(`Instrument: ${INSTR}  TF: ${TF}  from: ${from}  to: ${to}  format: ${PRICE_FMT}`);
 
-    // ✅ Hard-lock package resolution so npx never guesses wrong.
-    const baseArgs = [
-      "--yes",
-      "--package", "dukascopy-cli@1.6.3",
-      "dukascopy-cli",
-      "--instrument", INSTR,
-      "--timeframe", TF,
-      "--date-from", from,
-      "--date-to", to,
-      "--format", PRICE_FMT,
-      "--directory", outDir,
-      "--quiet",
-      "--retries", "2"
-    ];
+    let ok = false;
+    for (const ver of versions) {
+      // Use --package to pin the exact package that provides the binary
+      const args = [
+        "--yes",
+        "--package", `dukascopy-cli@${ver}`,
+        "dukascopy-cli",
+        "--instrument", INSTR,
+        "--timeframe", TF,
+        "--date-from", from,
+        "--date-to", to,
+        "--format", PRICE_FMT,
+        "--directory", outDir,
+        "--quiet",
+        "--retries", "2"
+      ];
+      try {
+        console.log(`[npx] trying dukascopy-cli@${ver}`);
+        runNPX(args);
+        ok = true;
+        break;
+      } catch (e) {
+        console.warn(`[npx] dukascopy-cli@${ver} failed, will try next candidate…`);
+      }
+    }
 
-    try {
-      runNPX(baseArgs);
-    } catch {
-      console.warn("dukascopy-cli failed, retrying once...");
-      runNPX(baseArgs);
+    if (!ok) {
+      throw new Error(`All dukascopy-cli versions failed for ${INSTR} ${ym}`);
     }
   }
 
   console.log("\n✓ Duka download complete.");
-})().catch((e) => {
+}
+
+main().catch((e) => {
   console.error(e);
   process.exit(1);
 });
