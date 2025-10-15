@@ -6,23 +6,30 @@
   "description": "Production-grade swing signal bot (Mean Reversion core, Momentum optional, AI validation gate).",
   "engines": { "node": ">=20" },
   "scripts": {
+    "prepare": "husky",
+
     "dev:run": "node scripts/hello.js",
     "dev:lint": "eslint .",
     "dev:fmt": "prettier .",
     "dev:test": "node -e \"console.log('no tests yet')\"",
-    "prepare": "husky",
 
-    "data:duka:test-oct23": "INSTRUMENT=EURUSD DUKA_FROM_MONTH=2023-10 DUKA_TO_MONTH=2023-10 node scripts/duka-download.js",
     "data:duka:download": "node scripts/duka-download.js",
     "data:duka:build": "node scripts/build-candles.js",
-
     "data:duka:batch": "node scripts/duka-batch.js",
     "data:duka:batch:validate": "node scripts/duka-batch.js --validate",
+    "data:phase1:validate": "node scripts/validate-phase1.js",
 
     "scan:mr": "node scripts/scan-mr.js --symbol=EUR-USD",
     "bt:mr": "node scripts/backtest-mr.js --symbol=EUR-USD",
+
     "daily:scan": "node scripts/daily-scan.js",
-    "weekly:guard": "node scripts/weekly-guard.js"
+    "refresh:last": "node scripts/refresh_last.js",
+    "weekly:guard": "node scripts/weekly_guard.js",
+
+    "accept:s4": "node scripts/acceptance_s4.mjs",
+    "accept:summary": "node scripts/acceptance_summary.mjs",
+
+    "print:fx:keep": "node -e \"import { readFile } from 'node:fs/promises'; console.log(JSON.parse(await readFile('config/symbols_live.json','utf8')).fx_keep.join(','))\"",
 
     "ai:validate": "node scripts/ai/validator.mjs --in=reports/daily/.last --out=reports/ai/$(date +%F)",
     "ai:digest": "node scripts/ai/digest.mjs --dir=reports/ai/.last --out=reports/ai/preview.txt",
@@ -33,8 +40,10 @@
     "*.{json,md,yml,yaml}": ["prettier --write"]
   },
   "dependencies": {
+    "dotenv": "^16.4.5",
     "dukascopy-node": "^1.43.0",
-    "dotenv": "^16.4.5"
+    "openai": "^4.57.0",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "eslint": "8.57.0",
