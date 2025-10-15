@@ -33,51 +33,29 @@ function monthList(fromYYYYMM, toYYYYMM) {
   return out;
 }
 
-function runNPX(args) {
+function runNodeRunner(from, to, outDir) {
+  const args = [
+    "dukascopy-node",
+    "--instrument", INSTR,
+    "--timeframe", TF,
+    "--date-from", from,
+    "--date-to", to,
+    "--format", PRICE_FMT,
+    "--directory", outDir
+    // NOTE: no --quiet, no --retries (we implement retries ourselves)
+  ];
   const env = {
     ...process.env,
-    NODE_OPTIONS: "--max-old-space-size=256",
-    // force the official registry (avoid broken mirrors)
+    NODE_OPTIONS: process.env.NODE_OPTIONS || "--max-old-space-size=512",
     NPM_CONFIG_REGISTRY: process.env.NPM_CONFIG_REGISTRY || "https://registry.npmjs.org/"
   };
-  return execFileSync("npx", args, { stdio: "inherit", env });
-}
-
-function hasLocalBin(binName) {
-  const p = path.join(ROOT, "node_modules", ".bin", binName);
-  try { fs.accessSync(p, fs.constants.X_OK); return true; } catch { return false; }
+  execFileSync("npx", args, { stdio: "inherit", env });
 }
 
 async function main() {
   console.log(`Downloading ${INSTR} ${FROM_M}..${TO_M}  ->  ${OUT_BASE}`);
   ensureDir(OUT_BASE);
   const months = monthList(FROM_M, TO_M);
-
-  // prefer dukascopy-node first (no version fetch at runtime)
-  const runners = [
-    { kind: "node",    npxArgs: (from, to, outDir) => [
-        "dukascopy-node",
-        "--instrument", INSTR, "--timeframe", TF,
-        "--date-from", from, "--date-to", to,
-        "--format", PRICE_FMT, "--directory", outDir, "--quiet"
-      ]},
-    // if user installed dukascopy-cli locally, use that (no registry fetch)
-    { kind: "cli-local", npxArgs: (from, to, outDir) => [
-        // this only works if devDependency is installed
-        "dukascopy-cli",
-        "--instrument", INSTR, "--timeframe", TF,
-        "--date-from", from, "--date-to", to,
-        "--format", PRICE_FMT, "--directory", outDir, "--quiet", "--retries", "2"
-      ], requireLocal: "dukascopy-cli" },
-    // last resort: grab via npx, which may hit registry “notarget”
-    { kind: "cli-latest", npxArgs: (from, to, outDir) => [
-        "--yes", "--package", "dukascopy-cli@latest",
-        "dukascopy-cli",
-        "--instrument", INSTR, "--timeframe", TF,
-        "--date-from", from, "--date-to", to,
-        "--format", PRICE_FMT, "--directory", outDir, "--quiet", "--retries", "2"
-      ]}
-  ];
 
   for (const ym of months) {
     const [y, m] = ym.split("-").map(Number);
@@ -91,26 +69,28 @@ async function main() {
       continue;
     }
 
-    console.log(`\n> downloading ${INSTR} ${ym}  ->  ${outDir}`);
+    console.log(`\n> downloading ${INSTR} ${ym}`);
     console.log(`Instrument=${INSTR} timeframe=${TF} from=${from} to=${to} format=${PRICE_FMT}`);
+    let attempts = 0, ok = false, lastErr = null;
 
-    let ok = false;
-    for (const r of runners) {
-      if (r.requireLocal && !hasLocalBin(r.requireLocal)) {
-        // skip local runner if not installed
-        continue;
-      }
+    while (attempts < 3 && !ok) {
+      attempts++;
       try {
-        console.log(`[runner] ${r.kind}`);
-        runNPX(r.npxArgs(from, to, outDir));
+        console.log(`[runner] dukascopy-node (attempt ${attempts}/3)`);
+        runNodeRunner(from, to, outDir);
         ok = true;
-        break;
       } catch (e) {
-        console.warn(`[runner] ${r.kind} failed, trying next…`);
+        lastErr = e;
+        console.warn(`[runner] dukascopy-node failed (attempt ${attempts})`);
+        // tiny backoff
+        await new Promise(r => setTimeout(r, 1200));
       }
     }
 
-    if (!ok) throw new Error(`All download runners failed for ${INSTR} ${ym}`);
+    if (!ok) {
+      console.error(lastErr);
+      throw new Error(`All download attempts failed for ${INSTR} ${ym}`);
+    }
   }
 
   console.log("\n✓ Duka download complete.");
