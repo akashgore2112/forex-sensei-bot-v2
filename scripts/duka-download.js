@@ -1,9 +1,4 @@
 // scripts/duka-download.js
-// Robust dukascopy downloader (FX + Metals + Commodities)
-// - env via src/utils/env.js
-// - instruments normalized (eur-usd => eurusd, brent => brent, xauusd ok)
-// - runner: dukascopy-node (no legacy cli), with sane env defaults
-
 import "../src/utils/env.js";
 import fs from "fs";
 import path from "path";
@@ -20,10 +15,28 @@ const TO_M      = process.env.DUKA_TO_MONTH   || "2025-12";
 const TF        = process.env.DUKA_TIMEFRAME  || "m1";
 const PRICE_FMT = "csv";
 
-// normalize: lower-case, remove non-alphanum (eur-usd => eurusd, xau/usd => xauusd)
+// Dukascopy-style aliases (lowercase)
+const ALIASES = {
+  // FX-style commodities & metals
+  brent:  "xbrusd",    // Brent CFD vs USD
+  wti:    "xtiusd",    // WTI  CFD vs USD
+  crude:  "xtiusd",
+
+  gold:   "xauusd",
+  silver: "xagusd",
+
+  // convenience
+  xbrusd: "xbrusd",
+  xtiusd: "xtiusd",
+  xauusd: "xauusd",
+  xagusd: "xagusd",
+};
+
 function normalizeInstrument(s) {
-  return String(s).trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+  const t = String(s).trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+  return ALIASES[t] || t; // map if known alias
 }
+
 const INSTR = normalizeInstrument(RAW_INSTR);
 
 // out: group by given INSTR label (upper for folder)
@@ -47,11 +60,11 @@ function monthSpan(fromYYYYMM, toYYYYMM) {
   return out;
 }
 
-// dukascopy-node runner (no legacy cli, no --quiet/--retries here)
+// dukascopy-node runner
 function runDukaNode({ fromIso, toIso, outDir }) {
   const args = [
     "dukascopy-node",
-    "--instrument", INSTR,           // already normalized
+    "--instrument", INSTR,           // already normalized / aliased
     "--timeframe", TF,
     "--date-from", fromIso,
     "--date-to",   toIso,
@@ -59,11 +72,10 @@ function runDukaNode({ fromIso, toIso, outDir }) {
     "--directory", outDir
   ];
 
-  // guard Termux/npm env quirks
   const env = {
     ...process.env,
     NODE_OPTIONS: process.env.NODE_OPTIONS || "--max-old-space-size=512",
-    NPM_CONFIG_REGISTRY: process.env.NPM_CONFIG_REGISTRY || "https://registry.npmjs.org/"
+    NPM_CONFIG_REGISTRY: process.env.NPM_CONFIG_REGISTRY || "https://registry.npmjs.org/",
   };
 
   execFileSync("npx", args, { stdio: "inherit", env });
@@ -98,7 +110,6 @@ async function main() {
       } catch (e) {
         lastErr = e;
         console.warn(`[runner] dukascopy-node failed (attempt ${attempt})`);
-        // small backoff
         await new Promise(r => setTimeout(r, 1200));
       }
     }
