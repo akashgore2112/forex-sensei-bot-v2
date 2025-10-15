@@ -17,6 +17,10 @@ const PRICE_FMT = "csv";
 const OUT_BASE = path.join(ROOT, "data", "raw", "duka", INSTR.toUpperCase());
 
 function ensureDir(p) { fs.mkdirSync(p, { recursive: true }); }
+function csvExists(dir) {
+  try { return fs.readdirSync(dir).some(f => f.endsWith(".csv")); }
+  catch { return false; }
+}
 function monthList(fromYYYYMM, toYYYYMM) {
   const [fy, fm] = fromYYYYMM.split("-").map(Number);
   const [ty, tm] = toYYYYMM.split("-").map(Number);
@@ -24,8 +28,7 @@ function monthList(fromYYYYMM, toYYYYMM) {
   let y = fy, m = fm;
   while (y < ty || (y === ty && m <= tm)) {
     out.push(`${y}-${String(m).padStart(2, "0")}`);
-    m += 1;
-    if (m > 12) { m = 1; y += 1; }
+    if (++m > 12) { m = 1; y++; }
   }
   return out;
 }
@@ -34,26 +37,46 @@ function runNPX(args) {
   const env = {
     ...process.env,
     NODE_OPTIONS: "--max-old-space-size=256",
-    // force official registry to avoid mirrors that miss versions
+    // force the official registry (avoid broken mirrors)
     NPM_CONFIG_REGISTRY: process.env.NPM_CONFIG_REGISTRY || "https://registry.npmjs.org/"
   };
   return execFileSync("npx", args, { stdio: "inherit", env });
 }
 
-function csvExists(dir) {
-  try { return fs.readdirSync(dir).some((f) => f.endsWith(".csv")); }
-  catch { return false; }
+function hasLocalBin(binName) {
+  const p = path.join(ROOT, "node_modules", ".bin", binName);
+  try { fs.accessSync(p, fs.constants.X_OK); return true; } catch { return false; }
 }
 
 async function main() {
-  const months = monthList(FROM_M, TO_M);
-  console.log(`Downloading ${INSTR} ${months[0]}..${months.at(-1)}  ->  ${OUT_BASE}`);
+  console.log(`Downloading ${INSTR} ${FROM_M}..${TO_M}  ->  ${OUT_BASE}`);
   ensureDir(OUT_BASE);
+  const months = monthList(FROM_M, TO_M);
 
-  // Try a few package versions in order
-  const versions = [
-    process.env.DUKA_CLI_VERSION || "1.6.2", // primary fallback known to exist widely
-    "latest"
+  // prefer dukascopy-node first (no version fetch at runtime)
+  const runners = [
+    { kind: "node",    npxArgs: (from, to, outDir) => [
+        "dukascopy-node",
+        "--instrument", INSTR, "--timeframe", TF,
+        "--date-from", from, "--date-to", to,
+        "--format", PRICE_FMT, "--directory", outDir, "--quiet"
+      ]},
+    // if user installed dukascopy-cli locally, use that (no registry fetch)
+    { kind: "cli-local", npxArgs: (from, to, outDir) => [
+        // this only works if devDependency is installed
+        "dukascopy-cli",
+        "--instrument", INSTR, "--timeframe", TF,
+        "--date-from", from, "--date-to", to,
+        "--format", PRICE_FMT, "--directory", outDir, "--quiet", "--retries", "2"
+      ], requireLocal: "dukascopy-cli" },
+    // last resort: grab via npx, which may hit registry “notarget”
+    { kind: "cli-latest", npxArgs: (from, to, outDir) => [
+        "--yes", "--package", "dukascopy-cli@latest",
+        "dukascopy-cli",
+        "--instrument", INSTR, "--timeframe", TF,
+        "--date-from", from, "--date-to", to,
+        "--format", PRICE_FMT, "--directory", outDir, "--quiet", "--retries", "2"
+      ]}
   ];
 
   for (const ym of months) {
@@ -69,43 +92,28 @@ async function main() {
     }
 
     console.log(`\n> downloading ${INSTR} ${ym}  ->  ${outDir}`);
-    console.log(`Instrument: ${INSTR}  TF: ${TF}  from: ${from}  to: ${to}  format: ${PRICE_FMT}`);
+    console.log(`Instrument=${INSTR} timeframe=${TF} from=${from} to=${to} format=${PRICE_FMT}`);
 
     let ok = false;
-    for (const ver of versions) {
-      // Use --package to pin the exact package that provides the binary
-      const args = [
-        "--yes",
-        "--package", `dukascopy-cli@${ver}`,
-        "dukascopy-cli",
-        "--instrument", INSTR,
-        "--timeframe", TF,
-        "--date-from", from,
-        "--date-to", to,
-        "--format", PRICE_FMT,
-        "--directory", outDir,
-        "--quiet",
-        "--retries", "2"
-      ];
+    for (const r of runners) {
+      if (r.requireLocal && !hasLocalBin(r.requireLocal)) {
+        // skip local runner if not installed
+        continue;
+      }
       try {
-        console.log(`[npx] trying dukascopy-cli@${ver}`);
-        runNPX(args);
+        console.log(`[runner] ${r.kind}`);
+        runNPX(r.npxArgs(from, to, outDir));
         ok = true;
         break;
       } catch (e) {
-        console.warn(`[npx] dukascopy-cli@${ver} failed, will try next candidate…`);
+        console.warn(`[runner] ${r.kind} failed, trying next…`);
       }
     }
 
-    if (!ok) {
-      throw new Error(`All dukascopy-cli versions failed for ${INSTR} ${ym}`);
-    }
+    if (!ok) throw new Error(`All download runners failed for ${INSTR} ${ym}`);
   }
 
   console.log("\n✓ Duka download complete.");
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+main().catch((e) => { console.error(e); process.exit(1); });
