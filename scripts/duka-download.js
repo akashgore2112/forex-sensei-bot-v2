@@ -1,112 +1,149 @@
 // scripts/duka-download.js
+// Robust Dukascopy monthly downloader with smart runner fallback:
+// - FX: try dukascopy-node
+// - Commodities/indices or "instrument not allowed": auto-fallback to dukascopy-cli@latest
+
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import url from "node:url";
 import "../src/utils/env.js"; // load .env
 
-const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
-const ROOT = path.resolve(__dirname, "..");
+// --------- env ---------
+const INSTR = process.env.INSTRUMENT?.trim();       // e.g. EURUSD, GBPUSD, BRENT.CMD/USD
+const SYMBOL = (process.env.SYMBOL_OUT || INSTR || "EURUSD")
+  .replaceAll("/", "-")
+  .toUpperCase();
+const TF     = (process.env.DUKA_TIMEFRAME || "m1").trim();
+const FROM_M = (process.env.DUKA_FROM_MONTH || "2023-01").trim(); // YYYY-MM
+const TO_M   = (process.env.DUKA_TO_MONTH   || "2025-10").trim();
 
-// ---- ENV ----
-const RAW_INSTR = process.env.INSTRUMENT || "EURUSD";
-// If the instrument has special chars (commodities, indices, metals), DO NOT change case.
-// For simple FX (letters only), use lower-case (dukascopy-node convention).
-const INSTR = /[./-]/.test(RAW_INSTR) ? RAW_INSTR : RAW_INSTR.toLowerCase();
+if (!INSTR) {
+  console.error("ERROR: INSTRUMENT is not set (e.g. EURUSD or BRENT.CMD/USD).");
+  process.exit(1);
+}
 
-const FROM_M = process.env.DUKA_FROM_MONTH || "2023-01";
-const TO_M   = process.env.DUKA_TO_MONTH   || "2025-10";
-const TF     = process.env.DUKA_TIMEFRAME  || "m1";
-const RETRIES = Number(process.env.DUKA_RETRIES || 3);
+// base dirs (same layout you already use)
+const ROOT = process.cwd();
+const OUT_BASE = path.join(ROOT, "data", "raw", "duka", SYMBOL);
 
-// Where to store raw CSVs. You can force a clean symbol folder name:
-const SYMBOL_OUT = process.env.SYMBOL_OUT ||
-  // For things like "BRENT.CMD/USD" this becomes "BRENT"
-  (/[./]/.test(INSTR) ? INSTR.split(".")[0].toUpperCase() : INSTR.toUpperCase());
-
-// data/raw/duka/<SYMBOL>/YYYY-MM
-const OUT_BASE = path.join(ROOT, "data", "raw", "duka", SYMBOL_OUT);
-
-// ensure dir
-function ensureDir(d) { fs.mkdirSync(d, { recursive: true }); }
-
-// month range maker: "YYYY-MM" inclusive
-function* monthsRange(from, to) {
-  const [fy, fm] = from.split("-").map(Number);
-  const [ty, tm] = to.split("-").map(Number);
+// helper: list months inclusive between FROM_M..TO_M
+function* monthRange(fromYyyyMm, toYyyyMm) {
+  const [fy, fm] = fromYyyyMm.split("-").map(Number);
+  const [ty, tm] = toYyyyMm.split("-").map(Number);
   let y = fy, m = fm;
   while (y < ty || (y === ty && m <= tm)) {
-    const mm = String(m).padStart(2, "0");
-    yield `${y}-${mm}`;
-    m++; if (m > 12) { m = 1; y++; }
+    yield `${y}-${String(m).padStart(2, "0")}`;
+    m += 1;
+    if (m === 13) { m = 1; y += 1; }
   }
 }
 
-// try a runner (dukascopy-node CLI) with retries
-function runOne({ instr, tf, month, outDir }) {
-  const [y, mm] = month.split("-");
-  const from = new Date(Date.UTC(Number(y), Number(mm) - 1, 1, 0, 0, 0));
-  const to   = new Date(Date.UTC(Number(y), Number(mm), 0, 23, 59, 59)); // month end 23:59:59
+// date helpers (UTC month bounds)
+function monthStart(mStr) { return new Date(`${mStr}-01T00:00:00.000Z`); }
+function monthEndISO(mStr) {
+  const [y, m] = mStr.split("-").map(Number);
+  const next = (m === 12) ? `${y+1}-01` : `${y}-${String(m+1).padStart(2,"0")}`;
+  return new Date(`${next}-01T00:00:00.000Z`).toISOString().replace(".000Z","").replace("Z","Z").replace(".000Z","Z").slice(0, -1) + "Z";
+}
 
-  const args = [
-    "--yes",
-    "dukascopy-node@latest",
-    "--instrument", instr,
-    "--timeframe", tf,
-    "--date-from", from.toISOString(),
-    "--date-to",   to.toISOString(),
+// detect “commodities/indices” → often missing in dukascopy-node’s enum
+const looksLikeCommodity = /\.CMD\//i.test(INSTR) || /\.IDX\//i.test(INSTR);
+
+// run a single attempt with a given runner
+function runWith(runner, { instrument, timeframe, fromISO, toISO, outDir }) {
+  const argsCommon = [
+    "--instrument", instrument,
+    "--timeframe", timeframe,
+    "--date-from", fromISO,
+    "--date-to", toISO,
     "--format", "csv",
     "--directory", outDir,
   ];
 
-  for (let attempt = 1; attempt <= RETRIES; attempt++) {
-    try {
-      console.log(`[runner] dukascopy-node (attempt ${attempt}/${RETRIES})`);
-      execFileSync("npx", args, { stdio: "inherit" });
-      return true;
-    } catch (e) {
-      console.log(`[runner] dukascopy-node failed (attempt ${attempt})`);
-      if (attempt === RETRIES) return false;
-    }
+  // dukascopy-node args:
+  if (runner === "node") {
+    // dukascopy-node is tolerant to these options; we avoid unknown flags
+    return execFileSync("npx", ["--yes", "dukascopy-node@latest", ...argsCommon], {
+      stdio: "pipe",
+      env: process.env,
+    }).toString();
   }
-  return false;
+
+  // dukascopy-cli args:
+  if (runner === "cli") {
+    // Avoid flags that older CLI doesn’t recognize; keep it minimal & reliable.
+    return execFileSync("npx", ["--yes", "dukascopy-cli@latest", ...argsCommon], {
+      stdio: "pipe",
+      env: {
+        ...process.env,
+        // help prevent OOM on low-RAM devices when CLI spawns Node
+        NODE_OPTIONS: process.env.NODE_OPTIONS || "--max-old-space-size=2048",
+      },
+    }).toString();
+  }
+
+  throw new Error(`Unknown runner: ${runner}`);
 }
 
-async function main() {
-  console.log(`Downloading ${INSTR} ${FROM_M}..${TO_M} -> ${OUT_BASE}`);
-  ensureDir(OUT_BASE);
+// resilient download for one month
+function downloadOneMonth(monthStr) {
+  const fromISO = monthStart(monthStr).toISOString();
+  const toISO   = monthEndISO(monthStr);
 
-  let anyOk = false;
-  for (const month of monthsRange(FROM_M, TO_M)) {
-    const outDir = path.join(OUT_BASE, month);
-    ensureDir(outDir);
+  const outDir = path.join(OUT_BASE, monthStr);
+  fs.mkdirSync(outDir, { recursive: true });
 
-    // If CSV already there, skip
-    const already = fs.readdirSync(outDir).some(f => f.toLowerCase().endsWith(".csv"));
-    if (already) {
-      console.log(`${month}: already has CSV  -  skip`);
-      continue;
+  // file existence heuristic (your CSV names may differ; we use dir presence only)
+  // Always run: Dukascopy can return partials; your build step tolerates duplicates.
+  const header = `downloading ${SYMBOL.toLowerCase()} ${monthStr} -> ${outDir}`;
+  console.log("\n>>", header);
+  console.log("Instrument=", INSTR, "timeframe", TF, "from", fromISO, "to", toISO, "format=csv");
+
+  // Decide primary runner
+  const primary = looksLikeCommodity ? "cli" : "node";
+  const secondary = looksLikeCommodity ? "node" : "cli";
+
+  const tryOrder = [primary, secondary];
+
+  let lastErr = null;
+  for (let i = 0; i < tryOrder.length; i++) {
+    const runner = tryOrder[i];
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        console.log(`[runner] ${runner} (attempt ${attempt}/3)`);
+        const out = runWith(runner, {
+          instrument: INSTR,
+          timeframe: TF,
+          fromISO,
+          toISO,
+          outDir,
+        });
+        // success if no throw
+        if (out?.trim()) console.log(out.trim().split("\n").slice(-3).join("\n"));
+        return; // this month done
+      } catch (e) {
+        const msg = String(e?.stderr || e?.stdout || e?.message || e);
+        const short = msg.split("\n").slice(-6).join("\n");
+        console.error(short);
+
+        // If node says instrument not allowed → jump straight to CLI
+        if (runner === "node" && /instrument.*does not match any of the allowed values/i.test(msg)) {
+          console.warn("node runner rejected instrument; switching to cli for this month.");
+          break; // break attempts loop, go to next runner (cli)
+        }
+
+        lastErr = e;
+      }
     }
-
-    console.log(`\n=> downloading ${INSTR} ${month} -> ${outDir}`);
-    const ok = runOne({ instr: INSTR, tf: TF, month, outDir });
-    if (!ok) {
-      console.error(`\nError: all download attempts failed for ${INSTR} ${month}`);
-      process.exitCode = 2;
-      // continue loop so you still get other months if possible
-    } else {
-      anyOk = true;
-    }
+    // continue to next runner if we broke out due to enum issue
   }
 
-  if (anyOk) {
-    console.log("\n✓ Duka download complete.");
-  } else {
-    console.error("\n✗ Duka download produced no new files.");
-  }
+  throw new Error(`All download attempts failed for ${SYMBOL} ${monthStr}`);
 }
 
-main().catch(err => {
-  console.error(err);
-  process.exit(1);
-});
+// ------------ main ------------
+console.log(`\nDuka download: ${INSTR} (${SYMBOL})  ${FROM_M}..${TO_M}  timeframe=${TF}`);
+for (const m of monthRange(FROM_M, TO_M)) {
+  downloadOneMonth(m);
+}
+console.log("\n✓ Duka download complete.");
