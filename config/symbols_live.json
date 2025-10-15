@@ -1,0 +1,17 @@
+{
+  "fx_keep": [
+    "EUR-USD",
+    "GBP-USD",
+    "AUD-USD"
+  ],
+  "fx_hold": [],
+  "fx_drop": [
+    "USD-JPY",
+    "USD-CHF",
+    "USD-CAD",
+    "EUR-JPY",
+    "GBP-JPY",
+    "NZD-USD"
+  ],
+  "oil_keep": []
+}

@@ -1,0 +1,22 @@
+{
+  "keepSymbols": [
+    "EUR-USD",
+    "GBP-USD",
+    "AUD-USD"
+  ],
+  "holdSymbols": [],
+  "dropSymbols": [
+    "USD-JPY",
+    "USD-CHF",
+    "USD-CAD",
+    "EUR-JPY",
+    "GBP-JPY",
+    "NZD-USD"
+  ],
+  "totals": {
+    "keepCount": 3,
+    "trades_total": 68,
+    "blended_win_pct": 60.3,
+    "monthly_trades_sum": 5.17
+  }
+}

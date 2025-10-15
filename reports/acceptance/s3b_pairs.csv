@@ -1,0 +1,10 @@
+group,symbol,trades_total,winRate_S4_pct,monthly_trades,decision,notes
+fx,EUR-USD,20,55,1.52,KEEP,
+fx,GBP-USD,21,71.4,1.60,KEEP,
+fx,USD-JPY,16,68.8,1.22,DROP,
+fx,AUD-USD,27,55.6,2.05,KEEP,
+fx,USD-CHF,12,41.7,0.91,DROP,
+fx,USD-CAD,13,53.8,0.99,DROP,
+fx,EUR-JPY,18,50,1.37,DROP,
+fx,GBP-JPY,16,56.3,1.22,DROP,
+fx,NZD-USD,26,50,1.98,DROP,
