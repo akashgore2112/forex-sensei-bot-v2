@@ -1,0 +1,16 @@
+{
+  "score_threshold": 60,
+  "features": {
+    "htf_trend_align": 20,
+    "zone_quality": 15,
+    "retest_quality": 15,
+    "session_ok": 10,
+    "adr_headroom": 15,
+    "spread_atr_ok": 10,
+    "structure_confluence": 15
+  },
+  "sessions": ["LDN", "NY"],
+  "min_adr_headroom_pct": 0.35,
+  "max_spread_to_atr": 0.12,
+  "llm_threshold": 70
+}
