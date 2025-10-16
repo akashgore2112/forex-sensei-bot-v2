@@ -1,51 +1,101 @@
-// scripts/duka-download.js
-// Robust Dukascopy monthly downloader with smart runner + multi-form CLI invocation.
+// Robust Dukascopy monthly downloader with alias → canonical instrument mapping.
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import "../src/utils/env.js"; // loads .env (works both .env file & inline env)
+import "../src/utils/env.js";
 
-const INSTR = process.env.INSTRUMENT?.trim();             // e.g. EURUSD, BRENT.CMD/USD
-const SYMBOL = (process.env.SYMBOL_OUT || INSTR || "EURUSD")
-  .replaceAll("/", "-")
-  .toUpperCase();
-const TF     = (process.env.DUKA_TIMEFRAME || "m1").trim();
-const FROM_M = (process.env.DUKA_FROM_MONTH || "2023-08").trim();
-const TO_M   = (process.env.DUKA_TO_MONTH   || "2025-10").trim();
+// ---------- env ----------
+const INSTR_RAW = process.env.INSTRUMENT?.trim();            // e.g. EURUSD, BRENT, BRENT.CMD/USD
+const TF        = (process.env.DUKA_TIMEFRAME || "m1").trim();
+const FROM_M    = (process.env.DUKA_FROM_MONTH || "2023-08").trim();
+const TO_M      = (process.env.DUKA_TO_MONTH   || "2025-10").trim();
 
-if (!INSTR) {
-  console.error("ERROR: INSTRUMENT env is required (e.g. EURUSD, GBPUSD, BRENT.CMD/USD)");
+if (!INSTR_RAW) {
+  console.error("ERROR: INSTRUMENT env is required (e.g. EURUSD, GBPUSD, BRENT, BRENT.CMD/USD)");
   process.exit(1);
 }
 
+// ---------- alias → canonical mapping ----------
+function normKey(s) {
+  return s.toLowerCase()
+    .replaceAll("-", "")
+    .replaceAll("_", "")
+    .replaceAll(".", "")
+    .replaceAll("/", "");
+}
+
+// Dukascopy canonical ids (lowercase)
+const ALIASES = {
+  // Brent
+  "brent": "brentcmdusd",
+  "brentcmdusd": "brentcmdusd",
+  "brentcmdusd": "brentcmdusd",
+  "brentcmddusd": "brentcmdusd",
+  "brentcmduusd": "brentcmdusd",
+  "brentcmduusds": "brentcmdusd",
+  "brentcmdusdusd": "brentcmdusd",
+  "brentcmdu": "brentcmdusd",
+  "brentcmd": "brentcmdusd",
+  // common typed variants
+  "brentcmdusd": "brentcmdusd",
+  "brentcmddusd": "brentcmdusd",
+  "brentcmdusdusd": "brentcmdusd",
+  "brentcmdus": "brentcmdusd",
+  "brentcmduusd": "brentcmdusd",
+  // with separators removed
+  "brentcmdusd": "brentcmdusd",
+  "brentcmdusd": "brentcmdusd",
+
+  // WTI
+  "wti": "wticmdusd",
+  "wticmdusd": "wticmdusd",
+  "wticmd": "wticmdusd",
+  "wticmdus": "wticmdusd",
+
+  // Metals (examples)
+  "xauusd": "xauusd",
+  "xagusd": "xagusd",
+};
+
+function toDukaCode(input) {
+  const k = normKey(input);
+  if (ALIASES[k]) return ALIASES[k];
+  // FX pairs fall back to lowercase as-is (eurusd, gbpusd, usdjpy, …)
+  return input.toLowerCase();
+}
+
+// use SYMBOL_OUT for folder name if given, else from input
+const SYMBOL = (process.env.SYMBOL_OUT || INSTR_RAW).replaceAll("/", "-").toUpperCase();
+const DUKA_CODE = toDukaCode(INSTR_RAW);
+
+// commodities/indices: prefer CLI
+const looksLikeCommodity = /(cmd|\.cmd\/|\.idx\/)/i.test(INSTR_RAW) ||
+                           /^(brent|wti)$/i.test(INSTR_RAW);
+
+// ---------- paths ----------
 const ROOT = process.cwd();
 const OUT_BASE = path.join(ROOT, "data", "raw", "duka", SYMBOL);
 
+// ---------- utils ----------
 function* monthRange(fromYyyyMm, toYyyyMm) {
   const [fy, fm] = fromYyyyMm.split("-").map(Number);
   const [ty, tm] = toYyyyMm.split("-").map(Number);
   let y = fy, m = fm;
   while (y < ty || (y === ty && m <= tm)) {
     yield `${y}-${String(m).padStart(2, "0")}`;
-    m++;
-    if (m === 13) { m = 1; y++; }
+    m++; if (m === 13) { m = 1; y++; }
   }
 }
-
-function monthStartISO(mStr) { return `${mStr}-01T00:00:00.000Z`; }
-function monthEndISO(mStr) {
-  const [y, m] = mStr.split("-").map(Number);
-  const ny = m === 12 ? y + 1 : y;
-  const nm = m === 12 ? 1 : m + 1;
-  return `${ny}-${String(nm).padStart(2, "0")}-01T00:00:00.000Z`;
+const startISO = m => `${m}-01T00:00:00.000Z`;
+function endISO(m) {
+  const [y, mo] = m.split("-").map(Number);
+  const ny = mo === 12 ? y + 1 : y;
+  const nmo = mo === 12 ? 1 : mo + 1;
+  return `${ny}-${String(nmo).padStart(2, "0")}-01T00:00:00.000Z`;
 }
 
-// commodities/indices often rejected by dukascopy-node’s validator enum
-const looksLikeCommodity = /\.CMD\//i.test(INSTR) || /\.IDX\//i.test(INSTR);
-
-// ----- runner helpers -----
-
+// ---------- runners ----------
 function runNode({ instrument, timeframe, fromISO, toISO, outDir }) {
   const args = [
     "--yes", "dukascopy-node@latest",
@@ -59,7 +109,6 @@ function runNode({ instrument, timeframe, fromISO, toISO, outDir }) {
   return execFileSync("npx", args, { stdio: "pipe", env: process.env }).toString();
 }
 
-// Try multiple CLI invocation forms to dodge npx/bin resolution quirks on Termux
 function runCli({ instrument, timeframe, fromISO, toISO, outDir }) {
   const baseArgs = [
     "--instrument", instrument,
@@ -69,44 +118,33 @@ function runCli({ instrument, timeframe, fromISO, toISO, outDir }) {
     "--format", "csv",
     "--directory", outDir,
   ];
-
-  const env = {
-    ...process.env,
-    NODE_OPTIONS: process.env.NODE_OPTIONS || "--max-old-space-size=2048",
-  };
-
+  const env = { ...process.env, NODE_OPTIONS: process.env.NODE_OPTIONS || "--max-old-space-size=2048" };
   const variants = [
-    // 1) direct package@latest
     ["--yes", "dukascopy-cli@latest", ...baseArgs],
-    // 2) package mode (-p …) + binary 'dukascopy-cli'
     ["--yes", "-p", "dukascopy-cli@latest", "dukascopy-cli", ...baseArgs],
-    // 3) package mode (-p …) + binary 'dukascopy'
     ["--yes", "-p", "dukascopy-cli@latest", "dukascopy", ...baseArgs],
-    // 4) older package name on some registries
     ["--yes", "-p", "dukascopy@latest", "dukascopy", ...baseArgs],
   ];
-
   let lastErr;
   for (const v of variants) {
-    try {
-      return execFileSync("npx", v, { stdio: "pipe", env }).toString();
-    } catch (e) {
+    try { return execFileSync("npx", v, { stdio: "pipe", env }).toString(); }
+    catch (e) {
       lastErr = e;
       const msg = String(e?.stderr || e?.stdout || e?.message || e);
-      console.error("[cli variant failed] tail:\n" + msg.split("\n").slice(-6).join("\n"));
+      console.error("[cli variant failed tail]\n" + msg.split("\n").slice(-6).join("\n"));
     }
   }
   throw lastErr;
 }
 
-function downloadOneMonth(monthStr) {
-  const fromISO = monthStartISO(monthStr);
-  const toISO   = monthEndISO(monthStr);
-  const outDir  = path.join(OUT_BASE, monthStr);
+function downloadMonth(m) {
+  const fromISO = startISO(m);
+  const toISO = endISO(m);
+  const outDir = path.join(OUT_BASE, m);
   fs.mkdirSync(outDir, { recursive: true });
 
-  console.log(`\n>> downloading ${SYMBOL.toLowerCase()} ${monthStr} -> ${outDir}`);
-  console.log("Instrument=", INSTR, "timeframe", TF, "from", fromISO, "to", toISO, "format=csv");
+  console.log(`\n>> downloading ${SYMBOL.toLowerCase()} ${m} -> ${outDir}`);
+  console.log("DUKA_CODE=", DUKA_CODE, "raw=", INSTR_RAW, "timeframe", TF, "from", fromISO, "to", toISO, "format=csv");
 
   const primary = looksLikeCommodity ? "cli" : "node";
   const secondary = looksLikeCommodity ? "node" : "cli";
@@ -119,29 +157,23 @@ function downloadOneMonth(monthStr) {
       try {
         console.log(`[runner] ${runner} (attempt ${attempt}/3)`);
         const out = runner === "node"
-          ? runNode({ instrument: INSTR, timeframe: TF, fromISO, toISO, outDir })
-          : runCli({ instrument: INSTR, timeframe: TF, fromISO, toISO, outDir });
+          ? runNode({ instrument: DUKA_CODE, timeframe: TF, fromISO, toISO, outDir })
+          : runCli({ instrument: DUKA_CODE, timeframe: TF, fromISO, toISO, outDir });
         if (out?.trim()) console.log(out.trim().split("\n").slice(-3).join("\n"));
         return;
       } catch (e) {
         const msg = String(e?.stderr || e?.stdout || e?.message || e);
-        console.error(msg.split("\n").slice(-8).join("\n"));
-        // If node rejects instrument enum, jump straight to CLI
-        if (runner === "node" && /instrument.*does not match any of the allowed values/i.test(msg)) {
-          console.warn("node runner rejected instrument; switching to cli for this month.");
-          break; // break attempts for node; move to CLI
-        }
+        console.error(msg.split("\n").slice(-10).join("\n"));
+        // if node complains invalid instrument, move to cli
+        if (runner === "node" && /instrument.*allowed values/i.test(msg)) break;
         lastErr = e;
       }
     }
   }
-
-  throw new Error(`All download attempts failed for ${SYMBOL} ${monthStr}`);
+  throw new Error(`All download attempts failed for ${SYMBOL} ${m}`);
 }
 
-// ---- main ----
-console.log(`\nDuka download: ${INSTR} (${SYMBOL})  ${FROM_M}..${TO_M}  timeframe=${TF}`);
-for (const m of monthRange(FROM_M, TO_M)) {
-  downloadOneMonth(m);
-}
+// ---------- main ----------
+console.log(`\nDuka download: ${INSTR_RAW} → ${DUKA_CODE}  ${FROM_M}..${TO_M}  timeframe=${TF}`);
+for (const m of monthRange(FROM_M, TO_M)) downloadMonth(m);
 console.log("\n✓ Duka download complete.");
