@@ -1,71 +1,75 @@
-# FILE: scripts/build-candles.js
-# PURPOSE: build 1H/4H/1D JSON for either a single symbol (SYMBOL_ENV),
-#          or a default list (FX), and it now also supports commodities like BRENT.
+// scripts/build-candles.js
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import '../src/utils/env.js';
 
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-import '../src/utils/env.js';                       // load .env
 import { aggregateDukascopy } from '../src/data/vendors/dukascopy-aggregate.js';
 import { ema, rsi, atr, adx } from '../src/indicators/ta.js';
 
 const __filename = fileURLToPath(import.meta.url);
-const __dirname  = path.dirname(__filename);
+const __dirname = path.dirname(__filename);
+const ROOT = path.resolve(__dirname, '..');
 
-const ROOT         = path.join(__dirname, '..');
-const RAW_BASE     = path.join(ROOT, 'data', 'raw', 'duka');       // data/raw/duka/<SYMBOL>/{YYYY-MM}/...
-const CANDLES_DIR  = path.join(ROOT, 'data', 'candles', 'duka');
-const CACHE_DIR    = path.join(ROOT, 'cache', 'json');
+const RAW_BASE = path.join(ROOT, 'data', 'raw', 'duka');
+const CANDLES_DIR = path.join(ROOT, 'data', 'candles', 'duka');
+const CACHE_DIR = path.join(ROOT, 'cache', 'json');
 
-// default FX universe (when SYMBOL_ENV is not provided)
-const FX_UNIVERSE = ['EURUSD','GBPUSD','USDJPY','AUDUSD','USDCAD','USDCHF','EURJPY','GBPJPY','NZDUSD'];
-// commodities we currently know; extend as needed
-const COMMODS     = ['BRENT'];  // folder: data/raw/duka/BRENT/*  (CSV like brentcmd-usd-*.csv)
+// Inputs (either INSTRUMENTS or single INSTRUMENT)
+const listFromEnv = () => {
+  const multi = (process.env.INSTRUMENTS || '')
+    .split(/[,\s]+/)
+    .map(s => s.trim().toUpperCase())
+    .filter(Boolean);
+  if (multi.length) return multi;
+  const single = (process.env.INSTRUMENT || 'EURUSD').toUpperCase();
+  return [single];
+};
 
-// resolve wanted symbols
-const ONE = (process.env.SYMBOL_ENV || '').trim().toUpperCase();
-const WANTED = ONE ? [ONE] : FX_UNIVERSE;
+// EURUSD -> EUR-USD (BRENT stays BRENT)
+const niceSymbol = s => (s.length === 6 ? `${s.slice(0,3)}-${s.slice(3)}` : s);
 
-// ensure folders
-function ensureDir(p){ if(!fs.existsSync(p)) fs.mkdirSync(p, {recursive:true}); }
+// ---- small utils
+function ensureDir(p) {
+  if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
+}
 
-function isFiniteOHLC(c){
+function isFiniteOHLC(c) {
   return (
     c &&
-    Number.isFinite(Number(new Date(c.time))) &&   // ISO time after we convert
     Number.isFinite(+c.open) &&
     Number.isFinite(+c.high) &&
-    Number.isFinite(+c.low)  &&
-    Number.isFinite(+c.close)
+    Number.isFinite(+c.low) &&
+    Number.isFinite(+c.close) &&
+    !Number.isNaN(new Date(c.time).getTime())
   );
 }
 
-function sanitize(series){
-  // convert epoch-ms → ISO, sort, de-dup
-  const iso = series.map(c => ({ ...c, time: new Date(Number(c.time)).toISOString() }));
-  const clean = iso.filter(isFiniteOHLC).sort((a,b) => new Date(a.time) - new Date(b.time));
+function sanitize(series) {
+  const iso = series.map(c => ({ ...c, time: new Date(c.time).toISOString() }));
+  const clean = iso.filter(isFiniteOHLC).sort((a, b) => new Date(a.time) - new Date(b.time));
   const out = [];
-  let lastT = -1;
-  for(const c of clean){
+  let last = null;
+  for (const c of clean) {
     const t = +new Date(c.time);
-    if(t !== lastT){ out.push(c); lastT = t; }
+    if (t !== last) {
+      out.push(c);
+      last = t;
+    }
   }
   return out;
 }
 
-function addIndicators(list){
-  const closes = list.map(c=>c.close);
-  const highs  = list.map(c=>c.high);
-  const lows   = list.map(c=>c.low);
-
-  const ema20 = ema(closes, 20);
-  const ema50 = ema(closes, 50);
-  const rsi14 = rsi(closes, 14);
-  const atr14 = atr(highs, lows, closes, 14);
-  const adx14 = adx(highs, lows, closes, 14);
-
-  return list.map((c,i)=>({
+function addIndicators(candles) {
+  const closes = candles.map(c => c.close);
+  const highs  = candles.map(c => c.high);
+  const lows   = candles.map(c => c.low);
+  const ema20  = ema(closes, 20);
+  const ema50  = ema(closes, 50);
+  const rsi14  = rsi(closes, 14);
+  const atr14  = atr(highs, lows, closes, 14);
+  const adx14  = adx(highs, lows, closes, 14);
+  return candles.map((c, i) => ({
     ...c,
     ema20: ema20[i] ?? null,
     ema50: ema50[i] ?? null,
@@ -75,62 +79,60 @@ function addIndicators(list){
   }));
 }
 
-function writeJSON(fp, obj){
-  ensureDir(path.dirname(fp));
-  fs.writeFileSync(fp, JSON.stringify(obj), 'utf8');
-  console.log('  wrote', fp);
+function writeJSON(file, obj) {
+  ensureDir(path.dirname(file));
+  fs.writeFileSync(file, JSON.stringify(obj));
+  console.log('   wrote', path.relative(ROOT, file));
 }
 
-async function buildOne(symbol){
+async function processSymbol(symbol) {
   const rawDir = path.join(RAW_BASE, symbol);
-  if(!fs.existsSync(rawDir)){
-    console.log(`[build] skip ${symbol} — raw dir not found: ${rawDir}`);
+  const outSym = niceSymbol(symbol);
+
+  console.log(`\n[build] ===== ${symbol} (${outSym}) =====`);
+  console.log('[build] rawDir =', rawDir);
+
+  if (!fs.existsSync(rawDir)) {
+    console.warn('[build] SKIP (raw dir not found):', rawDir);
     return;
   }
-
-  console.log(`\n[build] ===== ${symbol} =====`);
-  console.log('[build]  rawDir =', rawDir);
 
   ensureDir(CANDLES_DIR);
   ensureDir(CACHE_DIR);
 
-  // aggregate m1 CSV → H1/H4/D1 arrays (with epoch times)
+  console.log(`[build] vendor=DUKA symbol=${symbol} -> aggregate to 1H/4H/1D JSON ...`);
   const agg = await aggregateDukascopy(rawDir);
 
-  // clean + indicators
-  const H1 = addIndicators(sanitize(agg.h1));
-  const H4 = addIndicators(sanitize(agg.h4));
-  const D1 = addIndicators(sanitize(agg.d1));
+  const h1 = addIndicators(sanitize(agg.h1));
+  const h4 = addIndicators(sanitize(agg.h4));
+  const d1 = addIndicators(sanitize(agg.d1));
 
-  // output file names (consistent with existing convention)
-  const base = symbol.includes('-') ? symbol : symbol.replace(/([A-Z]{3})([A-Z]{3})/, '$1-$2'); // EURUSD→EUR-USD ; BRENT stays BRENT
-  const f1 = path.join(CANDLES_DIR,     `${base}_1H.json`);
-  const f4 = path.join(CANDLES_DIR,     `${base}_4H.json`);
-  const fD = path.join(CANDLES_DIR,     `${base}_1D.json`);
-  const c1 = path.join(CACHE_DIR,       `${base}_1H.json`);
-  const c4 = path.join(CACHE_DIR,       `${base}_4H.json`);
-  const cD = path.join(CACHE_DIR,       `${base}_1D.json`);
+  console.log(`[build] counts: 1D=${d1.length}, 4H=${h4.length}, 1H=${h1.length}`);
 
-  writeJSON(f1, { symbol: base, timeframe:'1H', candles:H1 });
-  writeJSON(f4, { symbol: base, timeframe:'4H', candles:H4 });
-  writeJSON(fD, { symbol: base, timeframe:'1D', candles:D1 });
+  // data/candles/duka
+  writeJSON(path.join(CANDLES_DIR, `${outSym}_1H.json`), { symbol: outSym, timeframe: '1H', candles: h1 });
+  writeJSON(path.join(CANDLES_DIR, `${outSym}_4H.json`), { symbol: outSym, timeframe: '4H', candles: h4 });
+  writeJSON(path.join(CANDLES_DIR, `${outSym}_1D.json`), { symbol: outSym, timeframe: '1D', candles: d1 });
 
-  writeJSON(c1, { symbol: base, timeframe:'1H', candles:H1 });
-  writeJSON(c4, { symbol: base, timeframe:'4H', candles:H4 });
-  writeJSON(cD, { symbol: base, timeframe:'1D', candles:D1 });
+  // cache/json (mirror)
+  writeJSON(path.join(CACHE_DIR, `${outSym}_1H.json`), { symbol: outSym, timeframe: '1H', candles: h1 });
+  writeJSON(path.join(CACHE_DIR, `${outSym}_4H.json`), { symbol: outSym, timeframe: '4H', candles: h4 });
+  writeJSON(path.join(CACHE_DIR, `${outSym}_1D.json`), { symbol: outSym, timeframe: '1D', candles: d1 });
 
-  console.log(`[build] done for ${symbol}`);
+  console.log('[build] done for', symbol);
 }
 
-async function main(){
-  console.log('[build] symbols =', WANTED.join(', '));
-  for(const s of WANTED){
-    await buildOne(s);
+async function main() {
+  const symbols = listFromEnv();
+  console.log('[build] symbols =', symbols.join(', '));
+  for (const s of symbols) {
+    // serial for low-RAM environments
+    await processSymbol(s);
   }
   console.log('\n[build] all symbols complete ✓');
 }
 
-main().catch(err=>{
-  console.error(err);
+main().catch(e => {
+  console.error('[build] FATAL', e);
   process.exit(1);
 });
